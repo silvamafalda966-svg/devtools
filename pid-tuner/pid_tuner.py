@@ -445,7 +445,7 @@ class PIDTuner:
     # ── Full auto-tune loop ──
 
     def auto_tune(self, wheel: int = 4, target_mps: float = 0.3,
-                  max_iter: int = 5, target_overshoot: float = 0.5) -> PIDParams:
+                  max_iter: int = 8, target_overshoot: float = 0.5) -> PIDParams:
         """
         Run iterative auto-tuning using model-free metric-driven adjustment.
 
@@ -472,9 +472,9 @@ class PIDTuner:
         self.bridge.enter_debug()
         self.bridge.flush(0.3)
 
-        # ── Start from current params (don't overwrite what user has) ──
-        # We can't read PID from STM32, so use known defaults
-        current = PIDParams(Kp=0.35, Ki=0.06, Kd=0.04)
+        # ── Start from known good baseline ──
+        # Use previous tune best as starting point
+        current = PIDParams(Kp=0.28, Ki=0.05, Kd=0.04)
         self.bridge.set_pid(wheel, current.Kp, current.Ki, current.Kd)
         print(f"\n  Start gains: Kp={current.Kp:.3f}, Ki={current.Ki:.3f}, Kd={current.Kd:.3f}")
 
@@ -492,14 +492,14 @@ class PIDTuner:
             data = self.step_test(target_mps, duration=2.0, wheel=wheel)
 
             if len(data) < 30:
-                print(f"  ⚠ Too few samples ({len(data)}), retrying...")
+                print(f"  WARN: Too few samples ({len(data)}), retrying...")
                 continue
 
             # 2. Analyze
             metrics = self.analyzer.analyze(data, target_mps, w_idx)
             all_results.append(metrics)
 
-            print(f"  📊 Metrics:")
+            print(f"  [Metrics]")
             print(f"     Rise: {metrics.rise_time_ms:.0f}ms | Overshoot: {metrics.overshoot_pct:.1f}%")
             print(f"     Settle: {metrics.settling_time_ms:.0f}ms | Steady err: {metrics.steady_state_err_mps:.4f} m/s")
             print(f"     Score: {metrics.score} (lower=better)")
@@ -508,53 +508,56 @@ class PIDTuner:
             if metrics.score < best_score:
                 best_score = metrics.score
                 best_params = PIDParams(current.Kp, current.Ki, current.Kd)
-                print(f"  ⭐ New best!")
+                print(f"  ** New best!")
 
             # 3. Convergence check
             if (metrics.overshoot_pct <= 1.0 and
                 metrics.rise_time_ms <= 200 and
                 abs(metrics.steady_state_err_mps) < 0.01):
-                print(f"\n  ✅ Converged! overshoot={metrics.overshoot_pct:.1f}%, "
+                print(f"\n  CONVERGED! overshoot={metrics.overshoot_pct:.1f}%, "
                       f"rise={metrics.rise_time_ms:.0f}ms, err={metrics.steady_state_err_mps:.4f}")
                 break
 
-            # 4. Adjust gains based on metric rules
+            # 4. Adjust gains based on metric rules (v2: +Kd)
             adj = PIDParams(current.Kp, current.Ki, current.Kd)
 
-            if metrics.overshoot_pct > 1.0:
-                # Too much overshoot → reduce P and I
-                adj.Kp = round(current.Kp * 0.90, 3)
-                adj.Ki = round(current.Ki * 0.90, 3)
-                print(f"  🔧 Overshoot {metrics.overshoot_pct:.1f}% > 1% → reduce Kp, Ki by 10%")
+            if metrics.overshoot_pct > 2.0:
+                # Too much overshoot -> reduce P, increase D (damping)
+                adj.Kp = round(current.Kp * 0.88, 3)
+                adj.Ki = round(current.Ki * 0.92, 3)
+                adj.Kd = round(current.Kd * 1.30 + 0.005, 3)
+                print(f"  [ADJ] Overshoot {metrics.overshoot_pct:.1f}% > 2% -> Kp-12% Ki-8% Kd+30%")
             elif metrics.rise_time_ms > 250:
-                # Too slow → increase P and I
+                # Too slow -> increase P, reduce D (D slows response)
                 adj.Kp = round(current.Kp * 1.10, 3)
                 adj.Ki = round(current.Ki * 1.10, 3)
-                print(f"  🔧 Rise {metrics.rise_time_ms:.0f}ms > 250ms → increase Kp, Ki by 10%")
+                adj.Kd = round(current.Kd * 0.85, 3)
+                print(f"  [ADJ] Rise {metrics.rise_time_ms:.0f}ms > 250ms -> Kp+10% Ki+10% Kd-15%")
             elif abs(metrics.steady_state_err_mps) > 0.02:
-                # Steady error → boost I
+                # Steady error -> boost I
                 adj.Ki = round(current.Ki * 1.20, 3)
-                print(f"  🔧 Steady err {metrics.steady_state_err_mps:.4f} > 0.02 → boost Ki by 20%")
+                print(f"  [ADJ] Steady err {metrics.steady_state_err_mps:.4f} > 0.02 -> boost Ki by 20%")
             else:
-                # Close to target, fine-tune: try slightly higher Kp for faster rise
+                # Close to target, fine-tune: bump Kp slightly, trim Kd
                 adj.Kp = round(current.Kp * 1.05, 3)
-                print(f"  🔧 Close to target → fine-tune Kp +5% to see if faster")
+                adj.Kd = round(current.Kd * 0.90, 3)
+                print(f"  [ADJ] Close to target -> Kp+5% Kd-10% to speed up")
 
             # Clamp
             adj.Kp = max(0.10, min(1.5, adj.Kp))
             adj.Ki = max(0.02, min(0.5, adj.Ki))
-            adj.Kd = max(0.0, min(0.10, adj.Kd))
+            adj.Kd = max(0.005, min(0.15, adj.Kd))
 
             # 5. Apply
             self.bridge.set_pid(wheel, adj.Kp, adj.Ki, adj.Kd)
-            print(f"  ⚡ Applied: Kp={adj.Kp:.3f}, Ki={adj.Ki:.3f}, Kd={adj.Kd:.3f}")
+            print(f"  Applied: Kp={adj.Kp:.3f}, Ki={adj.Ki:.3f}, Kd={adj.Kd:.3f}")
             current = adj
 
             time.sleep(0.3)  # let new params settle
 
         # ── Final report ──
         print(f"\n{'='*60}")
-        print(f"  🏆 TUNING COMPLETE")
+        print(f"  TUNING COMPLETE")
         print(f"  Best: Kp={best_params.Kp:.3f}, Ki={best_params.Ki:.3f}, Kd={best_params.Kd:.3f}")
         print(f"  Score: {best_score:.0f}")
         print(f"{'='*60}")
@@ -566,7 +569,7 @@ class PIDTuner:
                   f"overshoot={r.overshoot_pct:4.1f}% err={r.steady_state_err_mps:+.4f}")
 
         # C header snippet
-        print(f"\n  📝 Code to paste:")
+        print(f"\n  Code to paste (C header):")
         print(f"  #define PID_KP  {best_params.Kp:.2f}f")
         print(f"  #define PID_KI  {best_params.Ki:.2f}f")
         print(f"  #define PID_KD  {best_params.Kd:.2f}f")
