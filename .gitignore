@@ -1,0 +1,33 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+
+# ---- Node ----
+node_modules/
+package-lock.json
+
+# ---- car-studio 运行时数据 ----
+recordings/
+profiles/*.json
+
+# ---- 编辑器 / 系统 ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# ---- 临时产物 ----
+*.log
+*.tmp
+dist/
+build/
+
+# ---- 内部文档（不公开）----
+car-studio/gen_defense_doc.js
