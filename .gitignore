@@ -25,6 +25,8 @@ Thumbs.db
 
 # ---- 临时产物 ----
 *.log
+*.log.*
+server.log*
 *.tmp
 dist/
 build/
