@@ -1,0 +1,3193 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🍓 Car Studio</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+/* ═══════════════════════════════════════════════════
+   Theme: Dark
+   ═══════════════════════════════════════════════════ */
+:root {
+  --bg:        #0d1117;
+  --panel:     #161b22;
+  --border:    #30363d;
+  --accent:    #58a6ff;
+  --accent2:   #f78166;
+  --text:      #c9d1d9;
+  --text-dim:  #8b949e;
+  --green:     #3fb950;
+  --red:       #f85149;
+  --yellow:    #d2991d;
+  --orange:    #db6d28;
+  --speed-lo:  #3fb950;
+  --speed-hi:  #f85149;
+  font-family: 'Segoe UI', 'Consolas', monospace;
+  font-size: 13px;
+  color: var(--text);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Header ─────────────────────── */
+#header {
+  display: flex; align-items: center; gap: 16px;
+  padding: 8px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+#header .title { font-size: 16px; font-weight: 700; }
+#header .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+#header .dot.on  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+#header .dot.off { background: var(--red); }
+#header .hfps { color: var(--text-dim); font-size: 11px; min-width: 45px; }
+#header input[type=text] {
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); padding: 3px 8px; border-radius: 4px;
+  width: 80px; text-align: center;
+}
+#header button {
+  background: var(--accent); color: #fff; border: none;
+  padding: 4px 14px; border-radius: 4px; cursor: pointer; font-size: 12px;
+}
+#header button:hover { opacity: 0.85; }
+#header button.danger { background: var(--red); }
+#header .spacer { flex: 1; }
+#header .rec-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--red); animation: pulse 1s infinite; display: none;
+}
+#header .rec-dot.active { display: block; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+/* ── Tabs ───────────────────────── */
+#tabnav {
+  display: flex; gap: 0;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  padding: 0 16px;
+  flex-shrink: 0;
+}
+#tabnav button {
+  background: none; border: none; color: var(--text-dim);
+  padding: 8px 20px; cursor: pointer; font-size: 13px;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+}
+#tabnav button:hover { color: var(--text); }
+#tabnav button.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* ── Main content ───────────────── */
+#main { flex: 1; overflow: hidden; position: relative; }
+.tab-panel {
+  display: none;
+  position: absolute; inset: 0;
+  padding: 12px;
+  overflow: auto;
+}
+.tab-panel.active { display: flex; gap: 12px; }
+
+/* ── Dashboard ──────────────────── */
+#tab-dashboard {
+  display: none;
+  grid-template-columns: 200px 1fr 210px;
+  grid-template-rows: 1fr;
+  gap: 12px;
+}
+#tab-dashboard.active { display: grid; }
+
+.dash-left, .dash-right {
+  display: flex; flex-direction: column; gap: 10px;
+}
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px;
+}
+.panel h3 {
+  font-size: 11px; text-transform: uppercase;
+  color: var(--text-dim); margin-bottom: 8px;
+  letter-spacing: 1px;
+}
+
+/* speed bar */
+.speed-bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.speed-bar-row .label { width: 28px; font-size: 11px; color: var(--text-dim); font-weight: 600; }
+.speed-bar-row .bar-bg {
+  flex: 1; height: 14px; background: var(--bg);
+  border-radius: 4px; overflow: hidden;
+}
+.speed-bar-row .bar-fill {
+  height: 100%; border-radius: 4px; transition: width 0.08s linear;
+}
+.speed-bar-row .val { width: 44px; font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* sensor rows */
+.sensor-row { display: flex; justify-content: space-between; padding: 3px 0; font-size: 12px; }
+.sensor-row .sv { font-weight: 600; }
+
+/* odom stats */
+.odom-stat { display: flex; justify-content: space-between; padding: 2px 0; font-size: 11px; }
+.odom-stat .osv { color: var(--accent); font-weight: 600; }
+
+/* trajectory canvas */
+#traj-wrap {
+  position: relative;
+  flex: 1;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+#traj-canvas { width: 100%; height: 100%; display: block; cursor: grab; background: transparent; }
+#traj-canvas:active { cursor: grabbing; }
+#track-canvas { pointer-events: none; }
+#traj-hint {
+  position: absolute; top: 8px; right: 12px;
+  font-size: 10px; color: var(--text-dim); pointer-events: none;
+  background: rgba(0,0,0,0.5); padding: 2px 6px; border-radius: 3px;
+}
+
+/* ── PID Tuner ──────────────────── */
+#tab-tuner { display: none; gap: 12px; }
+#tab-tuner.active { display: flex; }
+
+.tuner-left {
+  width: 240px; display: flex; flex-direction: column; gap: 8px;
+  flex-shrink: 0;
+}
+.tuner-right {
+  flex: 1; display: flex; flex-direction: column; gap: 8px;
+}
+.wheel-select { display: flex; gap: 4px; flex-wrap: wrap; }
+.wheel-select button {
+  flex: 1; min-width: 36px;
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--text-dim); padding: 6px 4px; border-radius: 4px;
+  cursor: pointer; font-size: 11px; font-weight: 600;
+}
+.wheel-select button.active {
+  background: var(--accent); color: #fff; border-color: var(--accent);
+}
+
+.slider-group { margin-bottom: 6px; }
+.slider-group label {
+  display: flex; justify-content: space-between;
+  font-size: 11px; color: var(--text-dim); margin-bottom: 2px;
+}
+.slider-group label .sv { color: var(--accent); font-weight: 600; }
+.slider-group input[type=range] {
+  width: 100%; height: 6px;
+  -webkit-appearance: none; appearance: none;
+  background: var(--bg); border-radius: 3px; outline: none;
+}
+.slider-group input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 16px; height: 16px;
+  border-radius: 50%; background: var(--accent); cursor: pointer;
+}
+
+.tuner-actions { display: flex; gap: 6px; margin-top: 4px; }
+.tuner-actions button {
+  flex: 1; background: var(--accent); color: #fff;
+  border: none; padding: 7px 0; border-radius: 4px;
+  cursor: pointer; font-size: 12px;
+}
+
+/* step test */
+.step-row { display: flex; gap: 8px; align-items: center; }
+.step-row input {
+  width: 60px; background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); padding: 4px 8px; border-radius: 4px;
+  text-align: center;
+}
+.step-row button {
+  background: var(--orange); color: #fff;
+  border: none; padding: 5px 12px; border-radius: 4px; cursor: pointer;
+}
+
+/* waveform chart */
+#chart-wrap {
+  flex: 1; position: relative;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 6px; padding: 8px;
+  min-height: 200px;
+}
+#chart-wrap canvas { width: 100% !important; height: 100% !important; }
+
+/* ── Recorder ───────────────────── */
+#tab-recorder { display: none; gap: 12px; flex-direction: column; }
+#tab-recorder.active { display: flex; }
+.rec-ctl { display: flex; gap: 8px; align-items: center; }
+.rec-ctl button {
+  background: var(--accent); color: #fff;
+  border: none; padding: 8px 20px; border-radius: 4px; cursor: pointer; font-size: 13px;
+}
+.rec-ctl button.recording { background: var(--red); animation: pulse 1s infinite; }
+.rec-list { flex: 1; overflow-y: auto; }
+.rec-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 10px; background: var(--panel); border: 1px solid var(--border);
+  border-radius: 4px; margin-bottom: 4px;
+}
+.rec-item .ri-actions { display: flex; gap: 4px; }
+.rec-item button {
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); padding: 2px 8px; border-radius: 3px;
+  cursor: pointer; font-size: 11px;
+}
+
+/* ── Profiles ───────────────────── */
+#tab-profiles { display: none; gap: 12px; }
+#tab-profiles.active { display: flex; }
+.prof-list { width: 260px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; flex-shrink: 0; }
+.prof-item {
+  padding: 8px 10px; background: var(--panel); border: 1px solid var(--border);
+  border-radius: 4px; cursor: pointer;
+}
+.prof-item:hover { border-color: var(--accent); }
+.prof-item .pi-name { font-weight: 600; }
+.prof-item .pi-time { font-size: 10px; color: var(--text-dim); }
+.prof-detail { flex: 1; overflow-y: auto; }
+.prof-detail table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.prof-detail th, .prof-detail td {
+  padding: 4px 8px; border: 1px solid var(--border); text-align: center;
+}
+.prof-detail th { background: var(--bg); color: var(--text-dim); }
+
+/* ── Analysis ───────────────────── */
+#tab-statemachine { display: none; gap: 12px; }
+#tab-statemachine.active { display: flex; }
+#tab-statemachine .fsm-graph { min-height: 300px; }
+#tab-analysis { display: none; gap: 12px; }
+#tab-analysis.active { display: flex; flex-direction: column; }
+.ana-select { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.ana-select select {
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); padding: 4px 8px; border-radius: 4px;
+}
+.ana-chart-wrap {
+  flex: 1; background: var(--panel); border: 1px solid var(--border);
+  border-radius: 6px; padding: 8px; min-height: 250px;
+}
+.ana-metrics { overflow-x: auto; }
+.ana-metrics table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.ana-metrics th, .ana-metrics td {
+  padding: 3px 6px; border: 1px solid var(--border); text-align: center;
+}
+.ana-metrics th { background: var(--bg); color: var(--text-dim); }
+
+/* ── Status Bar ─────────────────── */
+#statusbar {
+  display: flex; gap: 16px;
+  padding: 4px 16px;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--text-dim);
+  flex-shrink: 0;
+}
+#statusbar span { font-variant-numeric: tabular-nums; }
+
+/* ── Header Command Input ────────── */
+#cmd-input-wrap { display: flex; gap: 4px; align-items: center; }
+#cmd-input {
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--accent); padding: 3px 8px; border-radius: 4px;
+  width: 100px; font-size: 11px; font-family: 'Consolas', monospace;
+}
+#cmd-input::placeholder { color: var(--text-dim); font-size: 10px; }
+#cmd-send-btn {
+  background: var(--accent); color: #fff; border: none;
+  padding: 3px 10px; border-radius: 4px; cursor: pointer; font-size: 11px;
+}
+#state-badge {
+  display: inline-block; padding: 2px 10px; border-radius: 10px;
+  font-size: 11px; font-weight: 700; margin-left: 6px;
+  transition: background 0.3s, color 0.3s;
+}
+
+/* ── IR Line Bar ────────────────── */
+#ir-line-wrap { position: relative; height: 32px; margin: 4px 0; }
+#ir-line-bar {
+  width: 100%; height: 8px; border-radius: 4px;
+  background: linear-gradient(to right, #1a1a1a 0%, #555 100%);
+  position: absolute; top: 12px; left: 0;
+}
+#ir-line-indicator {
+  position: absolute; top: 6px;
+  width: 8px; height: 20px; border-radius: 4px;
+  background: var(--green); box-shadow: 0 0 10px var(--green);
+  transition: left 0.08s;
+}
+#ir-line-labels {
+  display: flex; justify-content: space-between;
+  font-size: 9px; color: var(--text-dim); padding: 0 2px;
+}
+
+/* ── Speed Gauge ─────────────────── */
+#speed-gauge-canvas { display: block; margin: 0 auto; }
+
+/* ── K210 Target Table ───────────── */
+.k210-table { width: 100%; border-collapse: collapse; font-size: 10px; margin-top: 4px; }
+.k210-table th, .k210-table td {
+  padding: 2px 4px; text-align: center; border-bottom: 1px solid #21262d;
+}
+.k210-table th { color: var(--text-dim); font-weight: 400; }
+.k210-table .ripe { color: #ff6b6b; }
+.k210-table .unripe { color: #3fb950; }
+
+/* ── Zone Demo Panels ──────────── */
+.zone-item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 6px; margin: 2px 0;
+  background: var(--bg); border-radius: 4px;
+  font-size: 10px; border: 1px solid var(--border);
+}
+.zone-item .zid {
+  font-weight: 700; color: var(--accent); min-width: 14px;
+}
+.zone-item .zenc {
+  color: var(--text-dim); font-size: 9px; flex: 1;
+}
+.zone-item button {
+  font-size: 9px; padding: 2px 6px; border-radius: 3px;
+  border: none; cursor: pointer;
+}
+.zone-item .zgo {
+  background: var(--green); color: #fff;
+}
+.zone-item .zdel {
+  background: var(--red); color: #fff;
+}
+.stats-big {
+  font-size: 18px; font-weight: 700; text-align: center;
+}
+.stats-label {
+  font-size: 9px; color: var(--text-dim); text-align: center;
+}
+.zone-history-row {
+  display: flex; justify-content: space-between;
+  font-size: 10px; padding: 2px 0;
+  border-bottom: 1px solid #21262d;
+}
+</style>
+</head>
+<body>
+
+<!-- ══════════ Header ══════════ -->
+<div id="header">
+  <span class="title">🍓 Car Studio</span>
+  <span class="dot off" id="conn-dot"></span>
+  <span id="conn-label" style="font-size:12px;color:var(--text-dim)">未连接</span>
+  <span id="state-badge" style="background:var(--bg);color:var(--text-dim)">--</span>
+    <span class="hfps" id="hfps">-- fps</span>
+  <input type="text" id="hport" value="COM5" title="串口号">
+  <button id="hconn-btn" onclick="toggleConnection()">连接</button>
+  <div id="cmd-input-wrap">
+    <input type="text" id="cmd-input" placeholder="VOFA+ 命令..."
+           onkeydown="if(event.key==='Enter')sendCmdFromInput()">
+    <button id="cmd-send-btn" onclick="sendCmdFromInput()">发送</button>
+  </div>
+  <div class="spacer"></div>
+  <span class="rec-dot" id="rec-dot"></span>
+  <span id="rec-label" style="font-size:11px;color:var(--text-dim)">● REC</span>
+  <button id="rec-btn" onclick="toggleRecording()">● 录制</button>
+</div>
+
+<!-- ══════════ Tab Nav ══════════ -->
+<nav id="tabnav">
+  <button class="active" data-tab="dashboard">📊 仪表盘</button>
+  <button data-tab="tuner">🎚 PID 调参</button>
+  <button data-tab="recorder">⏺ 录制回放</button>
+  <button data-tab="profiles">💾 参数方案</button>
+  <button data-tab="statemachine">🔀 状态机</button>
+  <button data-tab="analysis">📈 对比分析</button>
+</nav>
+
+<!-- ══════════ Main ══════════ -->
+<div id="main">
+
+<!-- ── Dashboard ──────────────────── -->
+<div class="tab-panel active" id="tab-dashboard">
+  <div class="dash-left">
+    <!-- speed panel merged into right column --><div class="panel">
+      <h3>👁 IR 传感器阵列</h3>
+      <div id="ir-line-wrap">
+        <div id="ir-line-bar"></div>
+        <div id="ir-line-indicator" style="left:50%"></div>
+      </div>
+      <div id="ir-line-labels"><span>L</span><span>◉</span><span>R</span></div>
+      <div id="ir-array" style="display:flex;gap:6px;justify-content:center;align-items:center;padding:4px 0">
+        <div class="ir-dot" id="ir0" style="width:14px;height:14px;border-radius:50%;background:#555;border:1px solid var(--border)"></div>
+        <div class="ir-dot" id="ir1" style="width:14px;height:14px;border-radius:50%;background:#555;border:1px solid var(--border)"></div>
+        <div class="ir-dot" id="ir2" style="width:14px;height:14px;border-radius:50%;background:#555;border:1px solid var(--border)"></div>
+        <div class="ir-dot" id="ir3" style="width:14px;height:14px;border-radius:50%;background:#555;border:1px solid var(--border)"></div>
+        <div class="ir-dot" id="ir4" style="width:14px;height:14px;border-radius:50%;background:#555;border:1px solid var(--border)"></div>
+        <div class="ir-dot" id="ir5" style="width:14px;height:14px;border-radius:50%;background:#555;border:1px solid var(--border)"></div>
+      </div>
+      <div style="text-align:center;font-size:9px;color:var(--text-dim);margin-top:2px">
+        线位 <span id="ir-pos-text" style="color:var(--accent)">--</span> | 黑线数 <span id="ir-black-cnt" style="color:var(--green)">0</span>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>🎮 模式控制</h3>
+      <div style="display:flex;flex-wrap:wrap;gap:4px" id="mode-btns">
+        <!-- 主循环 -->
+        <button onclick="switchMode('MD')" data-mode="MD" style="flex:1 1 30%;min-width:50px;padding:5px 0;background:var(--accent);color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:10px;font-weight:600">0 DEBUG</button>
+        <button onclick="switchMode('M0')" data-mode="M0" style="flex:1 1 30%;min-width:50px;padding:5px 0;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:3px;cursor:pointer;font-size:10px">1 IDLE</button>
+        <button onclick="switchMode('M1')" data-mode="M1" style="flex:1 1 30%;min-width:50px;padding:5px 0;background:var(--bg);border:1px solid var(--border);color:var(--green);border-radius:3px;cursor:pointer;font-size:10px">2 巡线</button>
+        <button onclick="switchMode('M2')" data-mode="M2" style="flex:1 1 30%;min-width:50px;padding:5px 0;background:var(--bg);border:1px solid var(--border);color:var(--red);border-radius:3px;cursor:pointer;font-size:10px">3 避障</button>
+        <button onclick="switchMode('M3')" data-mode="M3" style="flex:1 1 30%;min-width:50px;padding:5px 0;background:var(--bg);border:1px solid var(--border);color:var(--green);border-radius:3px;cursor:pointer;font-size:10px">4 完成</button>
+        <!-- 岔路链 -->
+        <button onclick="switchMode('M4')" data-mode="M4" style="flex:1 1 30%;min-width:50px;padding:5px 0;background:#1a1a2e;border:1px solid #a371f7;color:#a371f7;border-radius:3px;cursor:pointer;font-size:10px">5 岔入</button>
+        <button onclick="switchMode('M5')" data-mode="M5" style="flex:1 1 30%;min-width:50px;padding:5px 0;background:#1a1a2e;border:1px solid #a371f7;color:#a371f7;border-radius:3px;cursor:pointer;font-size:10px">6 岔巡</button>
+        <button onclick="switchMode('M6')" data-mode="M6" style="flex:1 1 30%;min-width:50px;padding:5px 0;background:#1a1a2e;border:1px solid #a371f7;color:#a371f7;border-radius:3px;cursor:pointer;font-size:10px">7 判定</button>
+        <button onclick="switchMode('M7')" data-mode="M7" style="flex:1 1 30%;min-width:50px;padding:5px 0;background:#1a1a2e;border:1px solid #a371f7;color:#a371f7;border-radius:3px;cursor:pointer;font-size:10px">8 倒回</button>
+        <button onclick="switchMode('M8')" data-mode="M8" style="flex:1 1 30%;min-width:50px;padding:5px 0;background:#2e1a1a;border:1px solid #ff6b6b;color:#ff6b6b;border-radius:3px;cursor:pointer;font-size:10px">9 返程</button>
+      </div>
+      <div style="margin-top:5px;font-size:10px;color:var(--text-dim);text-align:center">
+        当前: <span id="cur-mode" style="color:var(--accent)">--</span>
+      </div>
+    </div>
+    <!-- strawberry stats moved to right column -->
+    <!-- K210 panel moved to right column -->
+    <div class="panel">
+      <h3>🗺 赛道地图</h3>
+      <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px">
+        直道2.0m | 弯道R0.6m | 实际尺寸
+      </div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
+        <button onclick="toggleTrack()" id="track-toggle" style="font-size:10px;background:var(--green);color:#fff;border:none;padding:2px 8px;border-radius:3px;cursor:pointer">显示</button>
+        <button onclick="state.track.showTrack=true;trajView.draw()" style="font-size:10px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:2px 8px;border-radius:3px;cursor:pointer">重新对齐</button>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>🎯 Zone 演示</h3>
+      <div style="margin-bottom:6px">
+        <div style="display:flex;gap:4px;align-items:center;margin-bottom:3px">
+          <span style="font-size:9px;color:var(--text-dim)">ENC/cm:</span>
+          <input type="number" id="zone-enc-per-cm" value="2707" step="10"
+            style="width:48px;background:var(--bg);border:1px solid var(--border);color:var(--accent);padding:1px 3px;border-radius:2px;font-size:9px;text-align:center"
+            onchange="onEncPerCmChange()">
+          <span style="font-size:9px;color:var(--text-dim)">线长:</span>
+          <input type="number" id="zone-branch-len" value="40" step="1"
+            style="width:38px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:1px 3px;border-radius:2px;font-size:9px;text-align:center"
+            onchange="onBranchLenChange()">
+          <span style="font-size:9px;color:var(--text-dim)">cm</span>
+        </div>
+        <div style="display:flex;gap:3px">
+          <input type="text" id="zone-name-input" placeholder="名称"
+            style="flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:2px 4px;border-radius:3px;font-size:10px">
+          <input type="number" id="zone-dist-input" placeholder="距离cm"
+            style="width:55px;background:var(--bg);border:1px solid var(--border);color:var(--accent);padding:2px 4px;border-radius:3px;font-size:10px;text-align:center">
+          <button onclick="addZoneByDist()"
+            style="font-size:10px;background:var(--accent);color:#fff;border:none;padding:2px 10px;border-radius:3px;cursor:pointer">+</button>
+        </div>
+      </div>
+      <div id="zone-list" style="max-height:200px;overflow-y:auto;margin-bottom:4px">
+        <div style="font-size:9px;color:var(--text-dim);text-align:center">输入距离(cm)添加 Zone</div>
+      </div>
+      <div style="display:flex;gap:4px">
+        <button onclick="clearZones()" style="flex:1;font-size:10px;background:var(--bg);border:1px solid var(--border);color:var(--red);padding:3px 6px;border-radius:3px;cursor:pointer">清空全部</button>
+      </div>
+      <div style="font-size:9px;color:var(--text-dim);margin-top:3px">
+        容差: <input type="number" id="zone-tolerance" value="68000" step="1000"
+          style="width:50px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:1px 3px;border-radius:2px;font-size:9px;text-align:center"> enc (±25cm)
+      </div>
+    </div>
+    <div class="panel">
+      <h3>📡 传感器</h3>
+      <div class="sensor-row"><span>红外 IR</span><span class="sv" id="sv-ir">--</span></div>
+      <div class="sensor-row"><span>超声波 US</span><span class="sv" id="sv-us">-- cm</span></div>
+      <div class="sensor-row"><span>编码器总</span><span class="sv" id="sv-enc">--</span></div>
+    </div>
+  </div>
+
+  <div id="traj-wrap">
+    <canvas id="track-canvas" style="position:absolute;inset:0;width:100%;height:100%;z-index:0"></canvas>
+    <canvas id="traj-canvas" style="position:relative;z-index:1"></canvas>
+    <div id="traj-hint" style="z-index:2">🖱 滚轮缩放 | 拖拽平移 | 双击归位 | 右键清零</div>
+    <!-- 状态时间线 -->
+    <div id="state-timeline" style="position:absolute;bottom:28px;left:12px;right:12px;height:18px;background:rgba(0,0,0,0.5);border-radius:3px;overflow:hidden;z-index:2;display:flex;align-items:center;gap:1px;padding:1px">
+      <span style="font-size:9px;color:var(--text-dim);margin-right:4px;flex-shrink:0;white-space:nowrap">状态</span>
+      <div id="state-timeline-bar" style="flex:1;height:14px;display:flex;gap:1px;overflow:hidden;border-radius:2px"></div>
+    </div>
+  </div>
+
+  <div class="dash-right">
+    <div class="panel">
+      <h3>🧭 航向</h3>
+      <canvas id="compass-canvas" width="120" height="120" style="display:block;margin:0 auto"></canvas>
+      <div style="text-align:center;font-size:20px;font-weight:700;color:var(--accent)" id="heading-deg">0°</div>
+    </div>
+    <div class="panel" id="mpu-panel">
+      <h3>📟 MPU6050 <span id="mpu-warmup-badge" style="font-size:10px;color:#f0a040">预热中...</span></h3>
+      <div id="mpu-warmup-bar" style="height:4px;background:var(--bg);border-radius:2px;margin:4px 0">
+        <div id="mpu-warmup-fill" style="height:100%;width:0%;background:#f0a040;border-radius:2px;transition:width 0.3s"></div>
+      </div>
+      <div style="font-size:11px;line-height:1.6">
+        <div>Init: <span id="mpu-init" style="font-weight:700">--</span></div>
+        <div>自检 Z: <span id="mpu-st" style="font-weight:700">--</span>%</div>
+        <div>零偏: <span id="mpu-bias" style="font-weight:700">--</span> °/s</div>
+        <div>通信: <span id="mpu-alive" style="font-weight:700">--</span></div>
+        <div style="margin-top:4px">
+          比例: <input id="gyro-scale-input" type="number" value="1.0" step="0.01" min="0.8" max="2.0"
+            style="width:50px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:1px 4px;border-radius:3px;font-size:11px"
+            onchange="setGyroScale(this.value)">
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>⚡⏱ 速度</h3>
+      <div id="speed-bars"></div>
+      <canvas id="speed-gauge-canvas" width="210" height="50" style="display:block;margin:4px auto 0"></canvas>
+    </div>
+    <div class="panel">
+      <h3>📏 里程计</h3>
+      <div class="odom-stat"><span>X</span><span class="osv" id="os-x">0.000 m</span></div>
+      <div class="odom-stat"><span>Y</span><span class="osv" id="os-y">0.000 m</span></div>
+      <div class="odom-stat"><span>航向</span><span class="osv" id="os-h">0.00 rad</span></div>
+      <div class="odom-stat"><span>速度</span><span class="osv" id="os-v">0.000 m/s</span></div>
+      <div class="odom-stat"><span>里程</span><span class="osv" id="os-dist">0.00 m</span></div>
+      <div class="odom-stat" style="margin-top:6px">
+        <span>轮距</span>
+        <span><input type="number" id="track-input" value="0.113" step="0.001" min="0.05" max="0.50"
+          style="width:55px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:1px 4px;border-radius:3px;font-size:11px;text-align:center"
+          onchange="setWheelTrack(this.value)"> m</span>
+      </div>
+      <button onclick="resetOdom()" style="margin-top:8px;width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px;border-radius:4px;cursor:pointer">↺ 重置原点</button>
+    </div>
+    <div class="panel">
+      <h3>🍓 草莓统计</h3>
+      <div style="font-size:11px;line-height:1.8;margin-bottom:4px">
+        <div>区域: <b id="stat-zones" style="color:var(--accent)">--</b></div>
+        <div>红草莓: <b id="stat-red" style="color:#ff6b6b">--</b></div>
+        <div>绿草莓: <b id="stat-green" style="color:#3fb950">--</b></div>
+      </div>
+      <div id="zone-history" style="font-size:10px;line-height:1.6;max-height:80px;overflow-y:auto"></div>
+    </div>
+    <div class="panel" id="k210-panel">
+      <h3>🤖 K210</h3>
+      <div id="k210-decision" style="min-height:30px;color:var(--text-dim);font-size:11px;text-align:center;padding:4px 0">
+        等待数据...
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── PID Tuner ──────────────────── -->
+<div class="tab-panel" id="tab-tuner">
+  <div class="tuner-left">
+    <div class="panel">
+      <h3>🎯 选择轮子</h3>
+      <div class="wheel-select" id="wheel-sel">
+        <button class="active" data-w="ALL">全部</button>
+        <button data-w="FL">FL</button>
+        <button data-w="FR">FR</button>
+        <button data-w="BL">BL</button>
+        <button data-w="BR">BR</button>
+      </div>
+    </div>
+    <div class="panel" id="slider-panel">
+      <h3>📐 参数</h3>
+      <div id="sliders"></div>
+    </div>
+    <div class="panel">
+      <h3>🧪 阶跃测试</h3>
+      <div class="step-row">
+        <span style="font-size:11px;color:var(--text-dim)">目标:</span>
+        <input type="number" id="step-target" value="0.3" step="0.05" min="0" max="2">
+        <span style="font-size:11px;color:var(--text-dim)">m/s</span>
+      </div>
+      <div class="step-row" style="margin-top:6px">
+        <span style="font-size:11px;color:var(--text-dim)">持续:</span>
+        <input type="number" id="step-dur" value="3" step="0.5" min="0.5" max="30">
+        <span style="font-size:11px;color:var(--text-dim)">s</span>
+        <button onclick="runStepTest()">▶ 执行</button>
+      </div>
+      <div style="margin-top:6px;font-size:11px;color:var(--text-dim)">
+        状态: <span id="step-status" style="color:var(--text)">就绪</span>
+      </div>
+    </div>
+    <div class="tuner-actions">
+      <button onclick="stopMotor()">⏹ 停车</button>
+      <button onclick="readParams()">📥 读取</button>
+    </div>
+  </div>
+
+  <div class="tuner-right">
+    <div class="panel" style="display:flex;gap:8px;align-items:center">
+      <span style="font-size:11px;color:var(--text-dim)">波形窗:</span>
+      <button onclick="setWaveformWindow(3)" style="font-size:10px;padding:2px 6px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:3px;cursor:pointer">3s</button>
+      <button onclick="setWaveformWindow(5)" style="font-size:10px;padding:2px 6px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:3px;cursor:pointer">5s</button>
+      <button onclick="setWaveformWindow(10)" style="font-size:10px;padding:2px 6px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:3px;cursor:pointer">10s</button>
+      <span style="flex:1"></span>
+      <button onclick="clearWaveform()" style="font-size:10px;padding:2px 6px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:3px;cursor:pointer">清除波形</button>
+    </div>
+    <div id="chart-wrap">
+      <canvas id="wave-chart"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- ── Recorder ──────────────────── -->
+<div class="tab-panel" id="tab-recorder">
+  <div class="panel">
+    <div class="rec-ctl">
+      <button id="rec-start-btn" onclick="toggleRecording()">▶ 开始录制</button>
+      <span style="font-size:12px;color:var(--text-dim)">已录制: <span id="rec-count">0</span> 帧</span>
+      <span style="flex:1"></span>
+      <button onclick="loadRecordings()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 12px;border-radius:4px;cursor:pointer">🔄 刷新列表</button>
+    </div>
+  </div>
+  <div class="rec-list panel" id="rec-list">
+    <div style="color:var(--text-dim);text-align:center;padding:20px">暂无录制，点击上方按钮开始</div>
+  </div>
+  <!-- 回放播放器 -->
+  <div class="panel" id="playback-panel" style="display:none">
+    <h3>▶ 回放</h3>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button onclick="playbackStart()" id="pb-play">▶</button>
+      <button onclick="playbackPause()" id="pb-pause">⏸</button>
+      <button onclick="playbackStop()">⏹</button>
+      <input type="range" id="pb-slider" min="0" max="100" value="0" style="flex:1" oninput="playbackSeek(this.value)">
+      <span id="pb-time" style="font-size:11px;color:var(--text-dim)">0/0</span>
+    </div>
+    <div style="height:200px;margin-top:8px;background:var(--bg);border:1px solid var(--border);border-radius:4px">
+      <canvas id="pb-canvas" style="width:100%;height:100%"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- ── Profiles ──────────────────── -->
+<div class="tab-panel" id="tab-profiles">
+  <div class="prof-list panel" id="prof-list">
+    <div style="display:flex;gap:4px;margin-bottom:8px">
+      <input type="text" id="prof-name" placeholder="方案名称" style="flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:4px">
+      <button onclick="saveProfile()" style="background:var(--accent);color:#fff;border:none;padding:5px 10px;border-radius:4px;cursor:pointer">保存</button>
+    </div>
+    <div id="prof-items"></div>
+  </div>
+  <div class="prof-detail panel" id="prof-detail">
+    <div style="color:var(--text-dim);text-align:center;padding:40px">← 选择一个方案查看</div>
+  </div>
+</div>
+
+<!-- ── State Machine ─────────────── -->
+<div class="tab-panel" id="tab-statemachine">
+  <div style="display:flex;gap:12px;height:100%">
+    <div style="flex:1;display:flex;flex-direction:column;gap:8px">
+      <!-- 当前状态大标题 -->
+      <div class="panel" style="text-align:center;padding:12px">
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px">当前状态</div>
+        <div id="fsm-current-big" style="font-size:28px;font-weight:700;transition:color 0.3s">--</div>
+      </div>
+      <!-- 状态转移图 -->
+      <div style="flex:1;position:relative;background:var(--panel);border:1px solid var(--border);border-radius:6px;overflow:hidden">
+        <canvas id="fsm-canvas" style="width:100%;height:100%;display:block"></canvas>
+      </div>
+    </div>
+    <div style="width:240px;display:flex;flex-direction:column;gap:8px;flex-shrink:0;overflow-y:auto">
+      <div class="panel">
+        <h3>📋 状态图例</h3>
+        <div id="fsm-legend" style="font-size:11px"></div>
+      </div>
+      <div class="panel">
+        <h3>📊 状态统计</h3>
+        <div id="fsm-stats" style="font-size:11px;color:var(--text-dim)">等待数据...</div>
+      </div>
+      <div class="panel" style="flex:1;overflow-y:auto">
+        <h3>📜 转移日志</h3>
+        <div id="fsm-log" style="font-size:10px;color:var(--text-dim);max-height:200px;overflow-y:auto">
+          <div style="text-align:center;padding:10px">等待状态变更...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Analysis ──────────────────── -->
+<div class="tab-panel" id="tab-analysis">
+  <div class="panel ana-select">
+    <span style="font-size:12px;color:var(--text-dim)">选择录制:</span>
+    <select id="ana-sel-a" onchange="updateAnalysis()"><option>-- 录制 A --</option></select>
+    <span style="color:var(--accent)">vs</span>
+    <select id="ana-sel-b" onchange="updateAnalysis()"><option>-- 录制 B --</option></select>
+    <button onclick="loadAnalysisRecordings()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 10px;border-radius:4px;cursor:pointer">🔄</button>
+  </div>
+  <div class="ana-chart-wrap">
+    <canvas id="ana-chart"></canvas>
+  </div>
+  <div class="ana-metrics panel" id="ana-metrics">
+    <div style="color:var(--text-dim);text-align:center;padding:20px">选择两组录制数据进行比较</div>
+  </div>
+</div>
+
+</div><!-- /#main -->
+
+<!-- ══════════ Status Bar ══════════ -->
+<div id="statusbar">
+  <span>FL: <b id="sb-fl" style="color:var(--green)">--</b></span>
+  <span>FR: <b id="sb-fr" style="color:var(--green)">--</b></span>
+  <span>BL: <b id="sb-bl" style="color:var(--green)">--</b></span>
+  <span>BR: <b id="sb-br" style="color:var(--green)">--</b></span>
+  <span style="margin-left:12px">IR:<b id="sb-ir" style="color:var(--yellow)">--</b></span>
+  <span>US:<b id="sb-us" style="color:var(--accent)">--</b></span>
+  <span style="flex:1"></span>
+  <span id="sb-decision" style="color:var(--text-dim);font-size:10px;margin-right:12px"></span>
+  <span id="sb-conn">⚫ 离线</span>
+</div>
+
+<!-- ══════════ SCRIPTS ══════════ -->
+<script>
+// ================================================================
+//  STATE
+// ================================================================
+const state = {
+  serialConnected: false,    // 串口连接状态（区别于 WebSocket）
+  recording: false,
+  port: 'COM5',
+  baud: 115200,
+  selectedWheel: 'ALL',
+  speeds: {fl:0, fr:0, bl:0, br:0},
+  sensors: {ir:0, us:0, enc:0},
+  heading: 0,
+  gyroYaw: null,             // MPU6050 陀螺仪航向角 (deg)，null=未收到数据
+  gyroYawTs: 0,              // 最后收到陀螺仪数据的时间戳
+  totalDist: 0,
+  lastX: 0,
+  lastY: 0,
+  fpsCounter: 0,
+  fpsLast: performance.now(),
+  fps: 0,
+  chassisState: 0,           // current state machine state (0-14)
+  statePending: 0,           // 0=none, or pending state ID waiting for S: confirmation
+  statePendingUntil: 0,      // performance.now() deadline for pending confirmation
+  stateHistory: [],          // [{state, tick}] for state timeline
+  lastDecision: null,        // latest K210 decision {pick, cls, area, red_cnt, green_cnt}
+  track: {                   // 实际赛道尺寸 (m) — 直道沿Y轴，START在(0,0)
+    straightLen: 2.5,        // 直道长 2.5m
+    curveRadius: 0.65,       // 弯道半径 0.65m
+    trackWidth:  0.03,       // 赛道线宽 3cm (黑胶带实际宽度)
+    branchLen:   0.5,        // 分支线长度 (待实测确认)
+    berryRadius: 0.15,       // 草莓区标记半径
+    branchOffsets: [0, 0],   // 岔路Y偏移 (待实测确认)
+    offsetX:     -0.65,      // 右直道中心线 X=0 (= -curveRadius)
+    offsetY:    -1.10,       // START线 Y=0 (顶部弯道出口往下15cm)
+    showTrack:   true,
+  },
+  params: {
+    FL:  {P:0.20, I:0.08, D:0.02, FF:0,   Alpha:0.30},
+    FR:  {P:0.20, I:0.08, D:0.02, FF:0,   Alpha:0.30},
+    BL:  {P:0.20, I:0.08, D:0.02, FF:0,   Alpha:0.30},
+    BR:  {P:0.35, I:0.08, D:0.10, FF:40,  Alpha:0.30},
+  },
+  waveformWindow: 5,  // seconds
+};
+
+let ws = null;
+let trajCtx = null;
+let trajCanvas = null;
+let compassCtx = null;
+let waveChart = null;
+let anaChart = null;
+let pbChart = null;
+
+// Recording
+let recFrames = [];
+let allRecordings = [];
+let playbackTimer = null;
+let playbackIdx = 0;
+let playbackFrames = [];
+let playbackRunning = false;
+
+// ================================================================
+//  TRACK MAP (赛道背景)
+// ================================================================
+class TrackMap {
+  /* 400m标准田径场比例：直道84.39m，弯道半径36.5m，缩比映射 */
+  constructor(canvas) {
+    this.cv = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.resize();
+  }
+
+  resize() {
+    const w = this.cv.parentElement.clientWidth;
+    const h = this.cv.parentElement.clientHeight;
+    if (w === 0 || h === 0) return;
+    this.cv.width = w;
+    this.cv.height = h;
+  }
+
+  setView(cx, cy, scale) { this.cx = cx; this.cy = cy; this.scale = scale; }
+
+  w2s(wx, wy) { return { x: wx * this.scale + this.cx, y: -wy * this.scale + this.cy }; }
+
+  draw(params) {
+    const ctx = this.ctx;
+    const w = this.cv.width, h = this.cv.height;
+    ctx.clearRect(0, 0, w, h);
+    if (!params.showTrack) return;
+
+    // Geometry: straights along Y-axis (car forward), curves at top/bottom
+    const SL = params.straightLen;
+    const CR = params.curveRadius;
+    const LW = params.trackWidth;
+    const ox = params.offsetX, oy = params.offsetY;
+    const halfSL = SL / 2;
+    const ringO = CR + LW * 1.2;   // outer ring radius
+    const ringI = CR - LW * 1.2;   // inner ring radius
+    const topY = oy + halfSL;       // top curve center Y
+    const botY = oy - halfSL;       // bottom curve center Y
+
+    // Helper: draw stadium path at curve radius r
+    // Straights at X = ox ± r (NOT ox ± CR), so arc endpoints meet straight endpoints
+    const ovalPath = (r) => {
+      const tcx = this.w2s(ox, topY);         // top curve center
+      const bcx = this.w2s(ox, botY);         // bottom curve center
+      const lx = ox - r;                       // left straight X (matches arc start)
+      const rx = ox + r;                       // right straight X (matches arc end)
+      const lt = this.w2s(lx, topY);           // left, top
+      const rt = this.w2s(rx, topY);           // right, top
+      const rb = this.w2s(rx, botY);           // right, bottom
+      ctx.moveTo(lt.x, lt.y);
+      ctx.arc(tcx.x, tcx.y, r * this.scale, Math.PI, 0, false);      // top curve: left→right
+      ctx.lineTo(rb.x, rb.y);                                          // right straight: down
+      ctx.arc(bcx.x, bcx.y, r * this.scale, 0, Math.PI, false);      // bottom curve: right→left
+      ctx.closePath();                                                 // left straight: up
+    };
+
+    // Track centerline X for branch lines etc (uses CR)
+    const leftX = ox - CR;
+    const rightX = ox + CR;
+
+    // === 1. Grass background ===
+    ctx.fillStyle = '#1a2e1a';
+    ctx.fillRect(0, 0, this.cv.width, this.cv.height);
+
+    // === 2. Track ring (evenodd: outer - inner = ring)
+    ctx.fillStyle = 'rgba(200,130,70,0.35)';
+    ctx.beginPath();
+    ovalPath(ringO);
+    ovalPath(ringI);
+    ctx.fill('evenodd');
+
+    // === 3. Track borders ===
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath(); ovalPath(ringO); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ovalPath(ringI); ctx.stroke();
+
+    // === 4. START line (左上角: 顶部弯道出口, 刚出圆弧) ===
+    const startY = topY;
+    const s1 = this.w2s(ox - ringO, startY);   // outer left edge
+    const s2 = this.w2s(ox + ringO, startY);   // outer right edge
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y); ctx.stroke();
+
+    // START label
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 12px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('START', (s1.x + s2.x) / 2, s1.y - 6);
+
+    // FINISH line (after one lap, same position)
+    ctx.strokeStyle = '#f85149';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([0.15 * this.scale, 0.1 * this.scale]);
+    ctx.beginPath();
+    const f1 = this.w2s(ox - ringO, startY + 0.25);
+    const f2 = this.w2s(ox + ringO, startY + 0.25);
+    ctx.moveTo(f1.x, f1.y); ctx.lineTo(f2.x, f2.y); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // === Draw Zone branches (dynamic, from measured distances) ===
+    const branchLen = (typeof zoneBranchLen !== 'undefined') ? zoneBranchLen : 0.40;  // 分支线长度, 默认40cm
+    const berryR = 0.12;  // 草莓区圆圈半径
+
+    // Helper: convert track distance (m) to world XY
+    // START at top-left (左直道, 刚出圆弧), 车沿左直道下行→底弯→右直道上行
+    const leftLenFromStart = startY - botY;    // 2.50m, 左直道从START到底部
+    const arcLen = Math.PI * CR;               // 弯道半圆弧长 ≈ 1.885m
+
+    function trackPos(distM, side) {
+      // side: -1=左直道(dist < leftLenFromStart), 1=右直道(dist > leftLenFromStart+arcLen)
+      if (side === 1) {
+        // Right straight: after left straight + bottom curve, going UP
+        let yUp = distM - leftLenFromStart - arcLen;
+        let y = botY + yUp;
+        if (y > topY) y = topY;
+        return { x: 0, y: y };
+      } else {
+        // Left straight: going DOWN from START
+        let y = startY - distM;
+        if (y < botY) y = botY;
+        return { x: ox - CR, y: y };
+      }
+    }
+
+    for (let zi = 0; zi < zones.length; zi++) {
+      const z = zones[zi];
+      // Convert distance cm→m, find world position
+      const distM = (z.distance_cm || 0) / 100.0;
+      const side = z.side || 1;  // default right side
+      const pos = trackPos(distM, side);
+      const baseX = side > 0 ? rightX : leftX;  // track edge X
+      // 🔧 草莓区在跑道内侧：分支线向跑道中心方向延伸
+      const teeX = baseX - side * 0.15;  // T-junction slightly inside track
+      const berryX = baseX - side * branchLen;  // berry zone at end of branch (inside)
+
+      // Is this the active zone being demo'd?
+      const isActive = (typeof activeZoneId !== 'undefined') && activeZoneId === z.id;
+
+      // T-marker on track edge
+      const t1 = this.w2s(teeX, pos.y - 0.08);
+      const t2 = this.w2s(baseX + side * 0.03, pos.y + 0.08);
+      ctx.fillStyle = isActive ? '#ffff00' : '#ff6b6b';
+      ctx.fillRect(Math.min(t1.x, t2.x), Math.min(t1.y, t2.y),
+                   Math.abs(t2.x - t1.x), Math.abs(t2.y - t1.y));
+
+      // Branch dashed line
+      ctx.strokeStyle = isActive ? '#ffff00' : '#ff6b6b';
+      ctx.lineWidth = isActive ? 3 : 2;
+      ctx.setLineDash([0.15 * this.scale, 0.1 * this.scale]);
+      ctx.beginPath();
+      const b1 = this.w2s(teeX, pos.y);
+      const b2 = this.w2s(berryX, pos.y);
+      ctx.moveTo(b1.x, b1.y); ctx.lineTo(b2.x, b2.y); ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Berry zone glow + circle
+      const bEnd = this.w2s(berryX, pos.y);
+      const grad = ctx.createRadialGradient(bEnd.x, bEnd.y, berryR * 0.2 * this.scale,
+                                             bEnd.x, bEnd.y, berryR * this.scale);
+      const glowColor = isActive ? 'rgba(255,255,0,0.8)' : 'rgba(255,100,100,0.7)';
+      const edgeColor = isActive ? 'rgba(255,255,0,0.1)' : 'rgba(255,100,100,0.05)';
+      grad.addColorStop(0, glowColor);
+      grad.addColorStop(1, edgeColor);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(bEnd.x, bEnd.y, berryR * this.scale, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = isActive ? '#ffff00' : '#ff6b6b';
+      ctx.lineWidth = isActive ? 2.5 : 1.5;
+      ctx.stroke();
+
+      // Label
+      ctx.fillStyle = isActive ? '#ffff00' : '#ff6b6b';
+      ctx.font = (isActive ? 'bold ' : '') + '11px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(z.label || ('Z' + z.id), bEnd.x, bEnd.y + berryR * this.scale + 14);
+    }
+
+
+    // === 6. Running direction arrows (on straights, pointing up) (on bottom straight, pointing right) ===
+    for (let ay = botY + 2.5; ay < topY - 1.0; ay += 2.5) {
+      const ap = this.w2s(ox, ay);
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      ctx.beginPath();
+      ctx.moveTo(ap.x, ap.y - 5);
+      ctx.lineTo(ap.x, ap.y + 8);
+      ctx.lineTo(ap.x - 6, ap.y + 2);
+      ctx.closePath(); ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(ap.x, ap.y - 5);
+      ctx.lineTo(ap.x, ap.y + 8);
+      ctx.lineTo(ap.x + 6, ap.y + 2);
+      ctx.closePath(); ctx.fill();
+    }
+  }
+
+
+}
+
+let trackMap = null;
+
+// ================================================================
+//  TRAJECTORY VIEW
+// ================================================================
+class TrajectoryView {
+  constructor(canvas) {
+    this.cv = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.points = [];      // [{x, y, h, v}]
+    this.scale = 200;      // px/m (适配2m直道赛道)
+    this.cx = canvas.width / 2;
+    this.cy = canvas.height / 2;
+    this.dragging = false;
+    this.dragStart = null;
+    this.dragCx0 = this.cx;
+    this.dragCy0 = this.cy;
+    this.resize();
+  }
+
+  resize() {
+    const w = this.cv.parentElement.clientWidth;
+    const h = this.cv.parentElement.clientHeight;
+    if (w === 0 || h === 0) return;  // 布局未完成，跳过
+    this.cv.width = w;
+    this.cv.height = h;
+    this.cx = w / 2;
+    this.cy = h / 2;
+  }
+
+  /** world → screen */
+  w2s(wx, wy) {
+    return {
+      x: wx * this.scale + this.cx,
+      y: -wy * this.scale + this.cy,
+    };
+  }
+
+  /** screen → world */
+  s2w(sx, sy) {
+    return {
+      x: (sx - this.cx) / this.scale,
+      y: -(sy - this.cy) / this.scale,
+    };
+  }
+
+  addPoint(x, y, heading, speed) {
+    this.points.push({x, y, h: heading, v: speed});
+    if (this.points.length > 30000) {
+      this.points = this.points.slice(-20000);
+    }
+  }
+
+  clear() {
+    this.points = [];
+  }
+
+  resetView() {
+    this.scale = 200;
+    const w = this.cv.parentElement.clientWidth;
+    const h = this.cv.parentElement.clientHeight;
+    this.cx = w / 2;
+    this.cy = h / 2;
+  }
+
+  draw() {
+    // Redraw track background first
+    if (trackMap) {
+      trackMap.setView(this.cx, this.cy, this.scale);
+      trackMap.draw(state.track);
+    }
+
+    const ctx = this.ctx;
+    const w = this.cv.width;
+    const h = this.cv.height;
+    ctx.clearRect(0, 0, w, h);
+
+    // Grid
+    this._drawGrid(ctx, w, h);
+
+    // Path
+    if (this.points.length > 1) {
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      for (let i = 1; i < this.points.length; i++) {
+        const p0 = this.points[i-1];
+        const p1 = this.points[i];
+        const s0 = this.w2s(p0.x, p0.y);
+        const s1 = this.w2s(p1.x, p1.y);
+
+        // 颜色映射速度
+        const absV = Math.abs(p1.v);
+        ctx.strokeStyle = this._speedColor(absV);
+        ctx.beginPath();
+        ctx.moveTo(s0.x, s0.y);
+        ctx.lineTo(s1.x, s1.y);
+        ctx.stroke();
+      }
+    }
+
+    // Current position
+    if (this.points.length > 0) {
+      const last = this.points[this.points.length - 1];
+      this._drawArrow(ctx, last.x, last.y, last.h);
+    }
+
+    // Scale bar
+    this._drawScaleBar(ctx, w, h);
+  }
+
+  _drawGrid(ctx, w, h) {
+    const meterStep = this._pickGridStep();
+    const p0 = this.s2w(0, 0);
+    const p1 = this.s2w(w, h);
+    const x0 = Math.floor(p0.x / meterStep) * meterStep;
+    const y0 = Math.floor(p1.y / meterStep) * meterStep;
+    const yn = Math.floor(p0.y / meterStep) * meterStep;
+
+    ctx.strokeStyle = '#21262d';
+    ctx.lineWidth = 0.5;
+    for (let wx = x0; wx <= p1.x; wx += meterStep) {
+      const s = this.w2s(wx, 0);
+      ctx.beginPath();
+      ctx.moveTo(s.x, 0);
+      ctx.lineTo(s.x, h);
+      ctx.stroke();
+    }
+    for (let wy = y0; wy <= yn; wy += meterStep) {
+      const s = this.w2s(0, wy);
+      ctx.beginPath();
+      ctx.moveTo(0, s.y);
+      ctx.lineTo(w, s.y);
+      ctx.stroke();
+    }
+  }
+
+  _pickGridStep() {
+    // 让网格间距在屏幕上约 50-100px
+    const targetPx = 60;
+    const raw = targetPx / this.scale;
+    const steps = [0.1, 0.2, 0.5, 1, 2, 5, 10];
+    for (const s of steps) {
+      if (s * this.scale >= targetPx) return s;
+    }
+    return 10;
+  }
+
+  _speedColor(v) {
+    // 0→blue, 0.3→green, 0.6→yellow, 1.0→red
+    const t = Math.min(v / 1.0, 1.0);
+    const r = Math.floor(t < 0.5 ? t * 2 * 255 : 255);
+    const g = Math.floor(t < 0.5 ? 255 : (1 - (t - 0.5) * 2) * 255);
+    const b = Math.floor((1 - t) * 180 + 20);
+    return `rgb(${r},${g},${b})`;
+  }
+
+  _drawArrow(ctx, wx, wy, heading) {
+    const s = this.w2s(wx, wy);
+    const size = 12;
+    ctx.save();
+    ctx.translate(s.x, s.y);
+    ctx.rotate(Math.PI / 2 - heading);  // 数学角→canvas 角: heading=π/2 时箭头朝上
+    ctx.fillStyle = '#58a6ff';
+    ctx.beginPath();
+    ctx.moveTo(0, -size);
+    ctx.lineTo(-size * 0.6, size * 0.7);
+    ctx.lineTo(size * 0.6, size * 0.7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  _drawScaleBar(ctx, w, h) {
+    const barLenM = this._pickGridStep();
+    const barLenPx = barLenM * this.scale;
+    const x = 20;
+    const y = h - 30;
+    ctx.strokeStyle = '#c9d1d9';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + barLenPx, y);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, y - 4);
+    ctx.lineTo(x, y + 4);
+    ctx.moveTo(x + barLenPx, y - 4);
+    ctx.lineTo(x + barLenPx, y + 4);
+    ctx.stroke();
+    ctx.fillStyle = '#c9d1d9';
+    ctx.font = '10px monospace';
+    const label = barLenM >= 1 ? `${barLenM.toFixed(0)}m` : `${(barLenM*100).toFixed(0)}cm`;
+    ctx.fillText(label, x + barLenPx / 2 - 15, y - 6);
+  }
+}
+
+let trajView = null;
+
+// ================================================================
+//  COMPASS
+// ================================================================
+function drawCompass(headingDeg) {
+  if (!compassCtx) return;
+  const cv = document.getElementById('compass-canvas');
+  const ctx = compassCtx;
+  const cx = cv.width / 2;
+  const cy = cv.height / 2;
+  const r = 55;
+
+  ctx.clearRect(0, 0, cv.width, cv.height);
+
+  // Outer ring
+  ctx.strokeStyle = '#30363d';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Tick marks
+  for (let i = 0; i < 36; i++) {
+    const a = (i * 10 - 90) * Math.PI / 180;
+    const inner = i % 3 === 0 ? r - 12 : r - 6;
+    ctx.strokeStyle = i % 3 === 0 ? '#8b949e' : '#30363d';
+    ctx.lineWidth = i % 3 === 0 ? 2 : 1;
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(a) * inner, cy + Math.sin(a) * inner);
+    ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+    ctx.stroke();
+  }
+
+  // Cardinal labels
+  ctx.fillStyle = '#8b949e';
+  ctx.font = '11px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const labels = {0: 'N', 90: 'E', 180: 'S', 270: 'W'};
+  for (const [deg, label] of Object.entries(labels)) {
+    const a = (deg - 90) * Math.PI / 180;
+    ctx.fillText(label, cx + Math.cos(a) * (r - 18), cy + Math.sin(a) * (r - 18));
+  }
+
+  // Needle
+  const needleA = -headingDeg * Math.PI / 180;
+  ctx.fillStyle = '#f85149';
+  ctx.beginPath();
+  ctx.moveTo(cx + Math.cos(needleA) * (r - 5), cy + Math.sin(needleA) * (r - 5));
+  ctx.lineTo(cx + Math.cos(needleA + 2.5) * 10, cy + Math.sin(needleA + 2.5) * 10);
+  ctx.lineTo(cx + Math.cos(needleA - 2.5) * 10, cy + Math.sin(needleA - 2.5) * 10);
+  ctx.closePath();
+  ctx.fill();
+
+  // Center dot
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// ================================================================
+//  SPEED BARS
+// ================================================================
+function createSpeedBars() {
+  const wheels = [
+    {id:'FL', label:'FL'},
+    {id:'FR', label:'FR'},
+    {id:'BL', label:'BL'},
+    {id:'BR', label:'BR'},
+  ];
+  const container = document.getElementById('speed-bars');
+  container.innerHTML = wheels.map(w =>
+    `<div class="speed-bar-row">
+      <span class="label">${w.label}</span>
+      <div class="bar-bg">
+        <div class="bar-fill" id="bar-${w.id}" style="width:0%;background:var(--speed-lo)"></div>
+      </div>
+      <span class="val" id="val-${w.id}">0.000</span>
+    </div>`
+  ).join('');
+}
+
+function updateSpeedBars(speeds) {
+  const maxV = 1.5;  // m/s, for bar scaling
+  for (const [id, v] of Object.entries(speeds)) {
+    const pct = Math.min(Math.abs(v) / maxV * 100, 100);
+    const uid = id.toUpperCase();  // fl→FL, fr→FR
+    const bar = document.getElementById(`bar-${uid}`);
+    const val = document.getElementById(`val-${uid}`);
+    if (bar && val) {
+      bar.style.width = `${pct}%`;
+      bar.style.background = v < 0 ? 'var(--accent)' :
+        v < 0.5 ? 'var(--speed-lo)' :
+        v < 0.8 ? 'var(--yellow)' : 'var(--speed-hi)';
+      val.textContent = v.toFixed(3);
+    }
+  }
+}
+
+// ================================================================
+//  PID SLIDERS
+// ================================================================
+const sliderDefs = [
+  {key:'P',  min:0, max:2.00, step:0.01, label:'Kp (比例)'},
+  {key:'I',  min:0, max:0.50, step:0.01, label:'Ki (积分)'},
+  {key:'D',  min:0, max:0.50, step:0.01, label:'Kd (微分)'},
+  {key:'FF', min:0, max:100,  step:1,    label:'前馈 FF'},
+  {key:'Alpha', min:0, max:1.00, step:0.05, label:'滤波 α'},
+];
+
+let sliderDebounceTimers = {};
+
+function createSliders() {
+  const container = document.getElementById('sliders');
+  container.innerHTML = sliderDefs.map(s =>
+    `<div class="slider-group">
+      <label>${s.label} <span class="sv" id="sv-${s.key}">--</span></label>
+      <input type="range" id="sl-${s.key}" min="${s.min}" max="${s.max}" step="${s.step}"
+             oninput="onSliderChange('${s.key}', this.value)">
+    </div>`
+  ).join('');
+}
+
+function updateSliderValues() {
+  const wheel = state.selectedWheel;
+  const p = wheel === 'ALL' ? state.params['FL'] : state.params[wheel];
+  if (!p) return;
+
+  for (const s of sliderDefs) {
+    const sl = document.getElementById(`sl-${s.key}`);
+    const sv = document.getElementById(`sv-${s.key}`);
+    if (sl && sv) {
+      sl.value = p[s.key];
+      sv.textContent = s.key === 'FF' ? p[s.key].toFixed(0) : p[s.key].toFixed(2);
+    }
+  }
+}
+
+function onSliderChange(key, value) {
+  const wheel = state.selectedWheel;
+  const val = parseFloat(value);
+
+  // 更新本地状态
+  if (wheel === 'ALL') {
+    for (const w of ['FL','FR','BL','BR']) {
+      state.params[w][key] = val;
+    }
+  } else {
+    state.params[wheel][key] = val;
+  }
+
+  // 更新显示
+  const sv = document.getElementById(`sv-${key}`);
+  if (sv) {
+    sv.textContent = key === 'FF' ? val.toFixed(0) : val.toFixed(2);
+  }
+
+  // 发送命令（debounce 150ms）
+  if (sliderDebounceTimers[key]) clearTimeout(sliderDebounceTimers[key]);
+  sliderDebounceTimers[key] = setTimeout(() => {
+    sendSliderCommand(key, val);
+  }, 150);
+}
+
+function sendSliderCommand(key, val) {
+  if (!state.serialConnected) return;
+
+  const wheel = state.selectedWheel;
+  const cmdKey = key === 'Alpha' ? 'L' : key;  // Alpha → L command
+
+  if (wheel === 'ALL') {
+    // 逐轮发送
+    for (const w of ['FL','FR','BL','BR']) {
+      sendCmd(`W${['FL','FR','BL','BR'].indexOf(w)}`);
+    }
+    setTimeout(() => {
+      const cmdVal = cmdKey === 'FF' ? `${cmdKey}${val.toFixed(0)}` :
+                     cmdKey === 'L'  ? `${cmdKey}${val.toFixed(2)}` :
+                     `${cmdKey}${val.toFixed(2)}`;
+      sendCmd(`WA`);
+      setTimeout(() => sendCmd(cmdVal), 30);
+    }, 30 * 4 + 20);
+  } else {
+    const wIdx = ['FL','FR','BL','BR'].indexOf(wheel);
+    sendCmd(`W${wIdx}`);
+    setTimeout(() => {
+      const cmdVal = cmdKey === 'FF' ? `${cmdKey}${val.toFixed(0)}` :
+                     cmdKey === 'L'  ? `${cmdKey}${val.toFixed(2)}` :
+                     `${cmdKey}${val.toFixed(2)}`;
+      sendCmd(cmdVal);
+    }, 30);
+  }
+}
+
+function sendCmd(cmd) {
+  if (!state.serialConnected) return;
+  // 优先走 WebSocket，失败时回退 REST
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({action: 'command', cmd}));
+  } else {
+    fetch('/api/command', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({cmd}),
+    }).catch(() => {});
+  }
+}
+
+// ── 命令输入框发送 ──
+function sendCmdFromInput() {
+  var input = document.getElementById('cmd-input');
+  var cmd = input.value.trim();
+  if (!cmd) return;
+
+  if (state.serialConnected) {
+    sendCmd(cmd);
+    // 回显
+    var sbEl = document.getElementById('cmd-history');
+    if (!sbEl) {
+      sbEl = document.createElement('span');
+      sbEl.id = 'cmd-history';
+      sbEl.style.cssText = 'font-size:10px;color:var(--yellow);margin-left:8px';
+      document.getElementById('cmd-input-wrap').appendChild(sbEl);
+    }
+    sbEl.textContent = '← ' + cmd;
+    setTimeout(function(){ sbEl.textContent = ''; }, 2000);
+  }
+  input.value = '';
+  input.focus();
+}
+
+// ================================================================
+//  WEBSOCKET
+// ================================================================
+let _wsReconnectDelay = 1000;  // 初始 1s, 指数退避
+
+function connectWs() {
+  if (ws) { ws.close(); ws = null; }
+
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${protocol}//${location.host}/ws`);
+
+  ws.onopen = () => {
+    console.log('WS connected');
+    _wsReconnectDelay = 1000;  // 连接成功, 重置退避
+  };
+
+  ws.onmessage = (evt) => {
+    try {
+      const msg = JSON.parse(evt.data);
+      if (msg.type === 'data' && msg.frames) {
+        handleDataFrames(msg.frames);
+      } else if (msg.type === 'error') {
+        console.error('Server error:', msg.msg);
+      }
+    } catch(e) {}
+  };
+
+  ws.onclose = () => {
+    console.log('WS disconnected, retry in ' + (_wsReconnectDelay/1000).toFixed(0) + 's');
+    setTimeout(connectWs, _wsReconnectDelay);
+    _wsReconnectDelay = Math.min(_wsReconnectDelay * 1.5, 15000);  // 指数退避, 最大15s
+  };
+
+  ws.onerror = () => {
+    ws.close();
+  };
+}
+
+function handleDataFrames(frames) {
+  if (!frames || !frames.length) return;
+
+  // 处理每一帧
+  for (const f of frames) {
+    // 状态变更消息（独立广播）
+    if (f._type === 'state') {
+      var st = f.state;
+      // 清除待确认标记（STM32 已回传确认）
+      state.statePending = 0;
+      state.statePendingUntil = 0;
+      if (st !== state.chassisState) {
+        state.chassisState = st;
+        state.stateHistory.push({state: st, tick: performance.now()});
+        if (state.stateHistory.length > 200) state.stateHistory.shift();
+        // 立刻更新徽章
+        var badge2 = document.getElementById('state-badge');
+        if (badge2) {
+          var sn2 = ['DEBUG','IDLE','巡线','避障','完成','岔入','岔巡','判定','倒回','返程'];
+          var sc2 = ['background:#8b949e;color:#000','background:#8b949e;color:#000',
+            'background:#3fb950;color:#000','background:#f85149;color:#fff',
+            'background:#3fb950;color:#000','background:#a371f7;color:#fff',
+            'background:#a371f7;color:#fff','background:#a371f7;color:#fff',
+            'background:#a371f7;color:#fff','background:#ff6b6b;color:#fff'];
+          badge2.textContent = sn2[st] || '??';
+          badge2.style.cssText = sc2[st] || '';
+        }
+        // Zone Demo 完成 (进入 IDLE) → 取消高亮
+        if (st === 1 && activeZoneId > 0) {
+          activeZoneId = 0;
+          if (trajView) trajView.draw();
+        }
+      }
+      continue;
+    }
+    // 决策消息（非帧数据）
+    if (f._type === 'decision') {
+      state.lastDecision = f;
+      continue;
+    }
+    // 陀螺仪 yaw 消息（MPU6050 航向角，单位度）
+    if (f._type === 'yaw') {
+      state.gyroYaw = f.yaw;   // 已经是 degrees
+      state.gyroYawTs = performance.now();
+      continue;
+    }
+    // MPU6050 预热进度消息
+    if (f._type === 'warmup') {
+      state.mpuWarmup = { pct: f.pct, tempC: f.temp_c };
+      continue;
+    }
+    // MPU6050 初始化消息（上电后发送一次）
+    if (f._type === 'mpu') {
+      state.mpuStatus = {
+        initOk: f.init_ok,
+        stZPct: f.st_z_pct,
+        biasDps: f.bias_dps,
+        alive: f.alive
+      };
+      state.mpuWarmup = null;  // 校准完成，清除预热状态
+      continue;
+    }
+    // 累计统计消息
+    if (f._type === 'summary') {
+      handleSummary(f);
+      continue;
+    }
+
+    // 更新速度
+    state.speeds = {fl: f.fl, fr: f.fr, bl: f.bl, br: f.br};
+    state.sensors = {ir: f.ir, us: f.us, enc: f.enc};
+
+    // heading 已在服务端通过陀螺仪+编码器互补融合，无需前端覆盖
+    state.heading = f.h;
+
+    // 状态机
+    const newState = f.state || 0;
+    // 如果有待确认的状态变更（M命令刚发送），数据帧的状态不做回退
+    // 避免乐观更新被旧帧瞬间覆盖（等 S: 回传确认或超时 500ms）
+    var nowTS = performance.now();
+    if (state.statePending && nowTS < state.statePendingUntil) {
+      // 待确认期内，忽略数据帧的状态回退
+    } else {
+      state.statePending = 0;
+      state.statePendingUntil = 0;
+      if (newState !== state.chassisState) {
+        state.chassisState = newState;
+        state.stateHistory.push({state: newState, tick: nowTS});
+        if (state.stateHistory.length > 200) state.stateHistory.shift();
+      }
+    }
+
+    // 里程
+    const dx = f.x - state.lastX;
+    const dy = f.y - state.lastY;
+    state.totalDist += Math.sqrt(dx*dx + dy*dy);
+    state.lastX = f.x;
+    state.lastY = f.y;
+
+    // 轨迹
+    trajView.addPoint(f.x, f.y, f.h, f.v);
+
+    // 录制
+    if (state.recording) {
+      recFrames.push({...f, ts: performance.now()});
+    }
+
+    // 波形缓冲
+    appendWaveformData(f);
+  }
+
+  // FPS
+  state.fpsCounter += frames.length;
+  const now = performance.now();
+  if (now - state.fpsLast >= 1000) {
+    state.fps = state.fpsCounter;
+    state.fpsCounter = 0;
+    state.fpsLast = now;
+  }
+
+  // 更新 UI（每 ~30fps 足矣）
+  requestAnimationFrame(() => updateDashboardUI());
+}
+
+function updateDashboardUI() {
+  // ── 速度条 ──
+  updateSpeedBars(state.speeds);
+
+  // ── IR 传感器阵列（6 个点 + 线位指示器） ──
+  var irVal = Math.round(state.sensors.ir);
+  var blackCnt = 0, irSum = 0;
+  for (let i = 0; i < 6; i++) {
+    const dot = document.getElementById('ir' + i);
+    if (dot) {
+      const onLine = !((irVal >> i) & 1);
+      if (onLine) { blackCnt++; irSum += i; }
+      dot.style.background = onLine ? '#3fb950' : '#30363d';
+      dot.style.boxShadow = onLine ? '0 0 8px #3fb950' : 'none';
+    }
+  }
+  // 线位指示器 (0~5 → left 0%~100%)
+  var indicator = document.getElementById('ir-line-indicator');
+  if (indicator) {
+    if (blackCnt > 0) {
+      var pos = irSum / blackCnt;  // 0~5
+      var pct = pos / 5 * 100;
+      indicator.style.left = pct + '%';
+      indicator.style.opacity = '1';
+    } else {
+      indicator.style.opacity = '0.3';
+    }
+  }
+  // 线位文字
+  var irPosEl = document.getElementById('ir-pos-text');
+  var irCntEl = document.getElementById('ir-black-cnt');
+  if (irPosEl && blackCnt > 0) irPosEl.textContent = (irSum / blackCnt).toFixed(2);
+  else if (irPosEl) irPosEl.textContent = '丢线';
+  if (irCntEl) irCntEl.textContent = blackCnt;
+
+  // ── K210 决策面板 ──
+  const decEl = document.getElementById('k210-decision');
+  if (decEl && state.lastDecision) {
+    const d = state.lastDecision;
+    const pickEmoji = d.pick ? "🍓" : "🟢";
+    const pickText = d.pick ? '采摘' : '跳过';
+    const clsText = d.cls === 0 ? '红(熟)' : '绿(未熟)';
+    decEl.innerHTML = '' + '<div style="font-size:14px;margin-bottom:2px">🍓红:' + d.red_cnt + ' | 🟢绿:' + d.green_cnt + '</div>' + '<div style="font-size:13px;color:var(--accent)">' + pickEmoji + ' ' + pickText + ' ' + clsText + ' area=' + d.area + '%</div>';
+  }
+
+  // ── 当前状态显示 (Dashboard 内 + Header 徽章) ──
+  const stateNames = ['DEBUG','IDLE','巡线','避障','完成','岔入','岔巡','判定','倒回','返程'];
+  const curStateName = stateNames[state.chassisState] || '??';
+  document.getElementById('cur-mode').textContent = curStateName + ' [' + state.chassisState + ']';
+
+  // Header 状态徽章
+  var badge = document.getElementById('state-badge');
+  if (badge) {
+    badge.textContent = curStateName;
+    var stateColors = [
+      'background:#8b949e;color:#000',   // DEBUG
+      'background:#8b949e;color:#000',   // IDLE
+      'background:#3fb950;color:#000',   // LINE_FOLLOW
+      'background:#f85149;color:#fff',   // OBSTACLE
+      'background:#3fb950;color:#000',   // FINISH
+      'background:#a371f7;color:#fff',   // BRANCH_ENTER
+      'background:#a371f7;color:#fff',   // BRANCH_FOLLOW
+      'background:#a371f7;color:#fff',   // BRANCH_JUDGE
+      'background:#a371f7;color:#fff',   // BRANCH_REVERSE
+      'background:#ff6b6b;color:#fff',   // ZONE_RETURN
+    ];
+    badge.style.cssText = stateColors[state.chassisState] || 'background:var(--bg);color:var(--text-dim)';
+  }
+
+  // ── 传感器 ──
+  document.getElementById('sv-ir').textContent = state.sensors.ir.toFixed(1);
+  document.getElementById('sv-us').textContent = state.sensors.us.toFixed(1) + ' cm';
+  var enc = state.sensors.enc;
+  document.getElementById('sv-enc').textContent = enc.toFixed(0);
+
+  // ── Zone 编码器匹配指示 ──
+  var tol = parseInt(document.getElementById('zone-tolerance').value) || 68000;
+  for (var i = 0; i < zones.length; i++) {
+    var z = zones[i];
+    var diff = Math.abs(enc - z.encoder);
+    var inRange = diff < tol;
+    // 在 zone 列表中高亮匹配中的 zone
+    var items = document.querySelectorAll('.zone-item');
+    if (items[i]) {
+      if (inRange) {
+        items[i].style.background = '#1a3a1a';
+        items[i].style.borderColor = '#3fb950';
+      } else if (activeZoneId === z.id) {
+        items[i].style.background = '#2e1a1a';
+        items[i].style.borderColor = '#ff6b6b';
+      } else {
+        items[i].style.background = '';
+        items[i].style.borderColor = '';
+      }
+    }
+  }
+
+  // ── MPU6050 预热进度 ──
+  if (state.mpuWarmup) {
+    var wp = state.mpuWarmup;
+    document.getElementById('mpu-warmup-badge').textContent = '预热 ' + wp.pct + '%';
+    document.getElementById('mpu-warmup-badge').style.display = '';
+    document.getElementById('mpu-warmup-bar').style.display = '';
+    document.getElementById('mpu-warmup-fill').style.width = wp.pct + '%';
+  } else if (state.mpuStatus) {
+    // 校准完成，隐藏进度条
+    document.getElementById('mpu-warmup-badge').style.display = 'none';
+    document.getElementById('mpu-warmup-bar').style.display = 'none';
+  }
+
+  // ── MPU6050 状态 ──
+  if (state.mpuStatus) {
+    var mp = state.mpuStatus;
+    document.getElementById('mpu-init').textContent = mp.initOk ? '✅' : '❌';
+    document.getElementById('mpu-init').style.color = mp.initOk ? '#3fb950' : '#f85149';
+    document.getElementById('mpu-st').textContent = mp.stZPct;
+    var stOk = mp.stZPct >= 86 && mp.stZPct <= 114;
+    document.getElementById('mpu-st').style.color = stOk ? '#3fb950' : '#f85149';
+    document.getElementById('mpu-bias').textContent = mp.biasDps.toFixed(3);
+    document.getElementById('mpu-alive').textContent = mp.alive ? 'OK' : 'FAIL';
+    document.getElementById('mpu-alive').style.color = mp.alive ? '#3fb950' : '#f85149';
+  }
+
+  // ── 航向 + 速度仪表 ──
+  var hDeg = (state.heading * 180 / Math.PI);
+  document.getElementById('heading-deg').textContent = hDeg.toFixed(0) + '°';
+  drawCompass(hDeg);
+  drawSpeedGauge(state.speeds);
+
+  // ── 里程计（取最近轨迹点） ──
+  if (trajView.points.length > 0) {
+    var last = trajView.points[trajView.points.length - 1];
+    document.getElementById('os-x').textContent = last.x.toFixed(3) + ' m';
+    document.getElementById('os-y').textContent = last.y.toFixed(3) + ' m';
+    document.getElementById('os-h').textContent = last.h.toFixed(3) + ' rad';
+    document.getElementById('os-v').textContent = last.v.toFixed(3) + ' m/s';
+    document.getElementById('os-dist').textContent = state.totalDist.toFixed(2) + ' m';
+  }
+
+  // ── 状态栏速度 ──
+  document.getElementById('sb-fl').textContent = state.speeds.fl.toFixed(3);
+  document.getElementById('sb-fr').textContent = state.speeds.fr.toFixed(3);
+  document.getElementById('sb-bl').textContent = state.speeds.bl.toFixed(3);
+  document.getElementById('sb-br').textContent = state.speeds.br.toFixed(3);
+
+  // ── 状态栏传感器简写 ──
+  var sbIr = document.getElementById('sb-ir');
+  var sbUs = document.getElementById('sb-us');
+  if (sbIr) sbIr.textContent = state.sensors.ir.toFixed(0);
+  if (sbUs) sbUs.textContent = state.sensors.us.toFixed(0) + 'cm';
+
+  // ── 状态栏 K210 决策简写 ──
+  var sbDec = document.getElementById('sb-decision');
+  if (sbDec && state.lastDecision) {
+    var d = state.lastDecision;
+    sbDec.textContent = (d.pick ? '🍓采' : (d.red_cnt + d.green_cnt > 0 ? '🟢跳' : '')) +
+      ' R' + d.red_cnt + ' G' + d.green_cnt;
+  } else if (sbDec) {
+    sbDec.textContent = '';
+  }
+
+  // ── FPS ──
+  document.getElementById('hfps').textContent = state.fps + ' fps';
+
+  // ── 录制帧数 ──
+  if (state.recording) {
+    document.getElementById('rec-count').textContent = recFrames.length;
+  }
+
+  // ── 轨迹重绘 ──
+  state._trajDrawCnt = (state._trajDrawCnt || 0) + 1;
+  if (state._trajDrawCnt % 3 === 0) {
+    trajView.draw();
+  }
+  // ── 状态时间线 ──
+  updateStateTimeline();
+}
+
+// ── 速度仪表（简易 Canvas 指针） ──
+let _speedGaugeInit = false;
+function drawSpeedGauge(speeds) {
+  var cv = document.getElementById('speed-gauge-canvas');
+  if (!cv) return;
+  if (!_speedGaugeInit) {
+    cv.width = 120; cv.height = 80;
+    _speedGaugeInit = true;
+  }
+  var ctx = cv.getContext('2d');
+  var w = cv.width, h = cv.height;
+  ctx.clearRect(0, 0, w, h);
+
+  // 平均前进速度
+  var v = (speeds.fl + speeds.fr + speeds.bl + speeds.br) / 4;
+  var maxV = 1.0;  // 满刻度 1.0 m/s
+  var angle = Math.PI * 0.75 - (Math.PI * 1.5) * Math.min(Math.abs(v), maxV) / maxV;
+
+  // 弧形刻度
+  var cx = w / 2, cy = h - 5, r = 55;
+  ctx.strokeStyle = '#30363d';
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, Math.PI * 0.75, Math.PI * 2.25, false);
+  ctx.stroke();
+
+  // 彩色弧
+  var grad = ctx.createLinearGradient(0, cy - r, 0, cy + r);
+  grad.addColorStop(0, '#3fb950'); grad.addColorStop(0.5, '#d2991d'); grad.addColorStop(1, '#f85149');
+  ctx.strokeStyle = grad;
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, Math.PI * 0.75, angle, false);
+  ctx.stroke();
+
+  // 指针
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + Math.cos(angle) * (r - 8), cy + Math.sin(angle) * (r - 8));
+  ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 文字
+  ctx.fillStyle = '#c9d1d9';
+  ctx.font = 'bold 16px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(v.toFixed(2), cx, cy - 20);
+  ctx.font = '9px monospace';
+  ctx.fillText('m/s', cx, cy - 5);
+}
+
+// ================================================================
+//  WAVEFORM CHART (PID Tuner)
+// ================================================================
+let waveBuf = [];  // [{ts, fl, fr, bl, br}]
+const WAVE_MAX_PTS = 300;  // 5s window at 100Hz minus decimation
+
+function initWaveformChart() {
+  const ctx = document.getElementById('wave-chart').getContext('2d');
+  waveChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      datasets: [
+        {label:'FL', borderColor:'#3fb950', data:[], pointRadius:0, borderWidth:1.5, tension:0.1},
+        {label:'FR', borderColor:'#58a6ff', data:[], pointRadius:0, borderWidth:1.5, tension:0.1},
+        {label:'BL', borderColor:'#d2991d', data:[], pointRadius:0, borderWidth:1.5, tension:0.1},
+        {label:'BR', borderColor:'#f85149', data:[], pointRadius:0, borderWidth:1.5, tension:0.1},
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      scales: {
+        x: {
+          type: 'linear',
+          title: {text:'时间 (s)', display:true, color:'#8b949e'},
+          ticks: {color:'#8b949e', maxTicksLimit:8},
+          grid: {color:'#21262d'},
+          min: 0,
+          max: state.waveformWindow,
+        },
+        y: {
+          title: {text:'速度 (m/s)', display:true, color:'#8b949e'},
+          ticks: {color:'#8b949e'},
+          grid: {color:'#21262d'},
+          suggestedMin: -0.1,
+          suggestedMax: 0.8,
+        },
+      },
+      plugins: {legend:{labels:{color:'#8b949e', usePointStyle:true, boxWidth:8}}},
+    },
+  });
+}
+
+function appendWaveformData(f) {
+  const ts = f.ts;
+  waveBuf.push({ts, fl:f.fl, fr:f.fr, bl:f.bl, br:f.br});
+  // 限制缓冲区
+  while (waveBuf.length > WAVE_MAX_PTS) waveBuf.shift();
+}
+
+function updateWaveformChart() {
+  if (!waveChart || waveBuf.length === 0) return;
+
+  const now = waveBuf[waveBuf.length - 1].ts;
+  const windowS = state.waveformWindow;
+  const cutoff = now - windowS;
+
+  // 清理过期数据
+  while (waveBuf.length > 1 && waveBuf[0].ts < cutoff - 0.5) waveBuf.shift();
+
+  const visible = waveBuf.filter(p => p.ts >= cutoff);
+  const t0 = visible.length > 0 ? visible[0].ts : now - windowS;
+
+  // 抽稀：每3个点取1个 (~33Hz)，100+ 点足够画平滑曲线
+  const decimated = visible.filter((_, i) => i % 3 === 0);
+
+  const chs = ['fl','fr','bl','br'];
+  for (let i = 0; i < 4; i++) {
+    waveChart.data.datasets[i].data = decimated.map(p => ({x: p.ts - t0, y: p[chs[i]]}));
+  }
+  waveChart.options.scales.x.min = 0;
+  waveChart.options.scales.x.max = windowS;
+  waveChart.update('none');
+}
+
+function setWaveformWindow(sec) {
+  state.waveformWindow = sec;
+}
+
+function clearWaveform() {
+  waveBuf = [];
+  if (waveChart) {
+    for (const ds of waveChart.data.datasets) ds.data = [];
+    waveChart.update();
+  }
+}
+
+// 定期更新波形 (10fps)
+setInterval(updateWaveformChart, 33);  // ~30fps
+
+// ================================================================
+//  CONNECTION
+// ================================================================
+async function toggleConnection() {
+  if (state.serialConnected) {
+    // 断开串口
+    await fetch('/api/disconnect', {method:'POST'});
+    state.serialConnected = false;
+    updateConnectionUI();
+  } else {
+    // 连接串口
+    const port = document.getElementById('hport').value || 'COM5';
+    const resp = await fetch('/api/connect', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({port, baud: state.baud}),
+    });
+    const r = await resp.json();
+    if (r.ok) {
+      state.serialConnected = true;
+      state.port = port;
+    } else {
+      alert(`连接失败: ${r.error}`);
+    }
+    updateConnectionUI();
+  }
+}
+
+function updateConnectionUI() {
+  const dot = document.getElementById('conn-dot');
+  const label = document.getElementById('conn-label');
+  const btn = document.getElementById('hconn-btn');
+  const sbConn = document.getElementById('sb-conn');
+
+  if (state.serialConnected) {
+    dot.className = 'dot on';
+    label.textContent = `${state.port} @ ${state.baud}`;
+    btn.textContent = '断开';
+    btn.className = 'danger';
+    sbConn.innerHTML = '🟢 已连接';
+    sbConn.style.color = 'var(--green)';
+  } else {
+    dot.className = 'dot off';
+    label.textContent = '未连接';
+    btn.textContent = '连接';
+    btn.className = '';
+    sbConn.innerHTML = '🔴 离线';
+    sbConn.style.color = 'var(--red)';
+  }
+}
+
+// ================================================================
+//  RECORDING
+// ================================================================
+async function toggleRecording() {
+  if (state.recording) {
+    // 停止
+    const label = prompt('录制标签 (可选):', 'run_' + new Date().toISOString().slice(11,19).replace(/:/g,'')) || '';
+    const resp = await fetch('/api/record/stop', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({label}),
+    });
+    const r = await resp.json();
+    state.recording = false;
+    recFrames = [];
+    document.getElementById('rec-dot').classList.remove('active');
+    document.getElementById('rec-start-btn').textContent = '▶ 开始录制';
+    document.getElementById('rec-start-btn').classList.remove('recording');
+    console.log(`录制完成: ${r.id}, ${r.frames} 帧`);
+  } else {
+    // 开始
+    await fetch('/api/record/start', {method:'POST'});
+    state.recording = true;
+    recFrames = [];
+    document.getElementById('rec-dot').classList.add('active');
+    document.getElementById('rec-start-btn').textContent = '⏹ 停止录制';
+    document.getElementById('rec-start-btn').classList.add('recording');
+  }
+}
+
+async function loadRecordings() {
+  const resp = await fetch('/api/recordings');
+  allRecordings = await resp.json();
+  renderRecordingList();
+}
+
+function renderRecordingList() {
+  const container = document.getElementById('rec-list');
+  if (allRecordings.length === 0) {
+    container.innerHTML = '<div style="color:var(--text-dim);text-align:center;padding:20px">暂无录制</div>';
+    return;
+  }
+  container.innerHTML = allRecordings.map(r =>
+    `<div class="rec-item">
+      <div>
+        <div style="font-weight:600">${r.label}</div>
+        <div style="font-size:10px;color:var(--text-dim)">${r.time} · ${r.count} 帧 · ${(r.count/100).toFixed(1)}s</div>
+      </div>
+      <div class="ri-actions">
+        <button onclick="playbackLoad('${r.id}')">▶ 回放</button>
+        <button onclick="downloadCSV('${r.id}')">📥 CSV</button>
+        <button onclick="deleteRecording('${r.id}')">🗑</button>
+      </div>
+    </div>`
+  ).join('');
+}
+
+async function deleteRecording(id) {
+  if (!confirm('确认删除？')) return;
+  await fetch(`/api/recordings/${id}`, {method:'DELETE'});
+  loadRecordings();
+}
+
+// ================================================================
+//  PLAYBACK
+// ================================================================
+function downloadCSV(rid) {
+  window.open('/api/recordings/' + rid + '/csv', '_blank');
+}
+
+async function playbackLoad(rid) {
+  const resp = await fetch(`/api/recordings/${rid}`);
+  const rec = await resp.json();
+  playbackFrames = rec.frames;
+  playbackIdx = 0;
+  document.getElementById('playback-panel').style.display = 'block';
+  document.getElementById('pb-slider').max = playbackFrames.length - 1;
+  document.getElementById('pb-slider').value = 0;
+  updatePlaybackTime();
+  drawPlaybackFrame(0);
+
+  // 初始化回放 Chart
+  const ctx = document.getElementById('pb-canvas').getContext('2d');
+  if (pbChart) pbChart.destroy();
+  pbChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      datasets: [
+        {label:'FL', borderColor:'#3fb950', data:[], pointRadius:0, borderWidth:1.5},
+        {label:'FR', borderColor:'#58a6ff', data:[], pointRadius:0, borderWidth:1.5},
+        {label:'BL', borderColor:'#d2991d', data:[], pointRadius:0, borderWidth:1.5},
+        {label:'BR', borderColor:'#f85149', data:[], pointRadius:0, borderWidth:1.5},
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      scales: {
+        x: {ticks:{color:'#8b949e'}, grid:{color:'#21262d'}},
+        y: {ticks:{color:'#8b949e'}, grid:{color:'#21262d'}, suggestedMin:-0.1, suggestedMax:0.8},
+      },
+      plugins: {legend:{labels:{color:'#8b949e', usePointStyle:true, boxWidth:8}}},
+    },
+  });
+
+  // 加载全部到 chart
+  const chs = ['fl','fr','bl','br'];
+  for (let i = 0; i < 4; i++) {
+    pbChart.data.datasets[i].data = playbackFrames.map((f,idx) => ({x:idx, y:f[chs[i]]}));
+  }
+  pbChart.update();
+}
+
+function playbackStart() {
+  if (!playbackFrames.length) return;
+  playbackRunning = true;
+  document.getElementById('pb-play').textContent = '▶▶';
+  playbackStep();
+}
+function playbackPause() {
+  playbackRunning = false;
+  document.getElementById('pb-play').textContent = '▶';
+  if (playbackTimer) clearInterval(playbackTimer);
+}
+function playbackStop() {
+  playbackPause();
+  playbackIdx = 0;
+  document.getElementById('pb-slider').value = 0;
+  updatePlaybackTime();
+}
+
+function playbackStep() {
+  if (!playbackRunning) return;
+  const interval = 10; // ms per frame (100Hz replay)
+  playbackTimer = setTimeout(() => {
+    playbackIdx = Math.min(playbackIdx + 1, playbackFrames.length - 1);
+    document.getElementById('pb-slider').value = playbackIdx;
+    updatePlaybackTime();
+    if (playbackIdx < playbackFrames.length - 1 && playbackRunning) {
+      playbackStep();
+    } else {
+      playbackPause();
+    }
+  }, interval);
+}
+
+function playbackSeek(idx) {
+  playbackIdx = parseInt(idx);
+  updatePlaybackTime();
+  drawPlaybackFrame(playbackIdx);
+}
+
+function updatePlaybackTime() {
+  const total = playbackFrames.length;
+  const t = playbackIdx / 100; // 100Hz
+  const totalT = total / 100;
+  document.getElementById('pb-time').textContent = `${t.toFixed(1)}s / ${totalT.toFixed(1)}s`;
+}
+
+function drawPlaybackFrame(idx) {
+  if (idx < 0 || idx >= playbackFrames.length) return;
+  const f = playbackFrames[idx];
+  updateSpeedBars({fl:f.fl, fr:f.fr, bl:f.bl, br:f.br});
+}
+
+// ================================================================
+//  PROFILES
+// ================================================================
+async function loadProfiles() {
+  const resp = await fetch('/api/profiles');
+  const profs = await resp.json();
+  const container = document.getElementById('prof-items');
+  if (!profs.length) {
+    container.innerHTML = '<div style="color:var(--text-dim);padding:8px;font-size:11px">暂无方案</div>';
+    return;
+  }
+  container.innerHTML = profs.map(p =>
+    `<div class="prof-item" onclick="showProfile('${p.name}')">
+      <div class="pi-name">${p.name}</div>
+      <div class="pi-time">${p.time}</div>
+    </div>`
+  ).join('');
+}
+
+async function saveProfile() {
+  const name = document.getElementById('prof-name').value.trim();
+  if (!name) { alert('请输入方案名称'); return; }
+
+  await fetch('/api/profiles', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name, params: state.params, note: ''}),
+  });
+  document.getElementById('prof-name').value = '';
+  loadProfiles();
+}
+
+async function showProfile(name) {
+  const resp = await fetch('/api/profiles');
+  const profs = await resp.json();
+  const p = profs.find(x => x.name === name);
+  if (!p) return;
+
+  const detail = document.getElementById('prof-detail');
+  const params = p.params;
+  const wheels = ['FL','FR','BL','BR'];
+  detail.innerHTML = `
+    <h3 style="margin-bottom:8px;font-size:13px">${p.name}</h3>
+    <div style="font-size:10px;color:var(--text-dim);margin-bottom:8px">${p.time}</div>
+    <table>
+      <tr><th></th>${wheels.map(w=>`<th>${w}</th>`).join('')}</tr>
+      ${sliderDefs.filter(s=>s.key!=='Alpha').map(s=>`
+        <tr>
+          <td style="color:var(--text-dim)">${s.label}</td>
+          ${wheels.map(w=>`<td>${s.key==='FF'?params[w][s.key].toFixed(0):params[w][s.key].toFixed(2)}</td>`).join('')}
+        </tr>
+      `).join('')}
+      <tr>
+        <td style="color:var(--text-dim)">滤波 α</td>
+        ${wheels.map(w=>`<td>${params[w].Alpha.toFixed(2)}</td>`).join('')}
+      </tr>
+    </table>
+    <div style="margin-top:12px;display:flex;gap:6px">
+      <button onclick="applyProfile('${name}')" style="background:var(--accent);color:#fff;border:none;padding:6px 14px;border-radius:4px;cursor:pointer">⚡ 应用此方案</button>
+      <button onclick="deleteProfile('${name}')" style="background:var(--bg);border:1px solid var(--border);color:var(--red);padding:6px 14px;border-radius:4px;cursor:pointer">🗑 删除</button>
+    </div>
+  `;
+}
+
+async function applyProfile(name) {
+  const resp = await fetch('/api/profiles');
+  const profs = await resp.json();
+  const p = profs.find(x => x.name === name);
+  if (!p) return;
+
+  if (!confirm(`确认应用方案 "${name}" 到 STM32？`)) return;
+
+  state.params = p.params;
+
+  // 逐轮发送参数
+  const wheels = ['FL','FR','BL','BR'];
+  for (let wi = 0; wi < wheels.length; wi++) {
+    const w = wheels[wi];
+    const pr = state.params[w];
+    setTimeout(() => {
+      sendCmd(`W${wi}`);
+      setTimeout(() => sendCmd(`P${pr.P.toFixed(2)}`), 40);
+      setTimeout(() => sendCmd(`I${pr.I.toFixed(2)}`), 80);
+      setTimeout(() => sendCmd(`D${pr.D.toFixed(2)}`), 120);
+      if (pr.FF > 0) setTimeout(() => sendCmd(`F${pr.FF.toFixed(0)}`), 160);
+      setTimeout(() => sendCmd(`L${pr.Alpha.toFixed(2)}`), 200);
+    }, wi * 250);
+  }
+
+  updateSliderValues();
+}
+
+async function deleteProfile(name) {
+  if (!confirm(`删除方案 "${name}"？`)) return;
+  await fetch(`/api/profiles/${name}`, {method:'DELETE'});
+  loadProfiles();
+  document.getElementById('prof-detail').innerHTML =
+    '<div style="color:var(--text-dim);text-align:center;padding:40px">← 选择一个方案查看</div>';
+}
+
+// ================================================================
+//  ANALYSIS
+// ================================================================
+async function loadAnalysisRecordings() {
+  const resp = await fetch('/api/recordings');
+  const recs = await resp.json();
+  const selA = document.getElementById('ana-sel-a');
+  const selB = document.getElementById('ana-sel-b');
+
+  selA.innerHTML = '<option>-- 录制 A --</option>' +
+    recs.map(r=>`<option value="${r.id}">${r.label} (${r.count}帧)</option>`).join('');
+  selB.innerHTML = '<option>-- 录制 B --</option>' +
+    recs.map(r=>`<option value="${r.id}">${r.label} (${r.count}帧)</option>`).join('');
+}
+
+async function updateAnalysis() {
+  const idA = document.getElementById('ana-sel-a').value;
+  const idB = document.getElementById('ana-sel-b').value;
+
+  if (!idA || !idB || idA.startsWith('--') || idB.startsWith('--')) return;
+
+  const [respA, respB] = await Promise.all([
+    fetch(`/api/recordings/${idA}`),
+    fetch(`/api/recordings/${idB}`),
+  ]);
+  const recA = await respA.json();
+  const recB = await respB.json();
+
+  // Chart
+  const ctx = document.getElementById('ana-chart').getContext('2d');
+  if (anaChart) anaChart.destroy();
+
+  const chs = ['fl','fr','bl','br'];
+  anaChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      datasets: [
+        ...chs.map((ch,i) => ({
+          label: `A-${ch.toUpperCase()}`,
+          borderColor: ['#3fb950','#58a6ff','#d2991d','#f85149'][i],
+          data: recA.frames.map((f,idx)=>({x:idx/100, y:f[ch]})),
+          pointRadius:0, borderWidth:1.5, borderDash:[],
+        })),
+        ...chs.map((ch,i) => ({
+          label: `B-${ch.toUpperCase()}`,
+          borderColor: ['#3fb950','#58a6ff','#d2991d','#f85149'][i],
+          data: recB.frames.map((f,idx)=>({x:idx/100, y:f[ch]})),
+          pointRadius:0, borderWidth:1, borderDash:[5,5],
+        })),
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      scales: {
+        x: {title:{text:'时间 (s)',display:true,color:'#8b949e'}, ticks:{color:'#8b949e'}, grid:{color:'#21262d'}},
+        y: {title:{text:'速度 (m/s)',display:true,color:'#8b949e'}, ticks:{color:'#8b949e'}, grid:{color:'#21262d'}},
+      },
+      plugins: {legend:{labels:{color:'#8b949e', usePointStyle:true, boxWidth:8}}},
+    },
+  });
+
+  // Metrics table
+  computeAndShowMetrics(recA, recB);
+}
+
+function computeAndShowMetrics(recA, recB) {
+  const metrics = (rec, label) => {
+    const fs = rec.frames;
+    if (!fs.length) return {label};
+    const speeds = fs.map(f => Math.abs(f.v));
+    const maxV = Math.max(...speeds);
+    const avgV = speeds.reduce((a,b)=>a+b,0) / speeds.length;
+    const flSpeeds = fs.map(f => Math.abs(f.fl));
+    const frSpeeds = fs.map(f => Math.abs(f.fr));
+    const blSpeeds = fs.map(f => Math.abs(f.bl));
+    const brSpeeds = fs.map(f => Math.abs(f.br));
+
+    return {
+      label,
+      count: fs.length,
+      duration: fs.length / 100,
+      maxSpeed: maxV.toFixed(3),
+      avgSpeed: avgV.toFixed(3),
+      avgFL: (flSpeeds.reduce((a,b)=>a+b,0)/flSpeeds.length).toFixed(3),
+      avgFR: (frSpeeds.reduce((a,b)=>a+b,0)/frSpeeds.length).toFixed(3),
+      avgBL: (blSpeeds.reduce((a,b)=>a+b,0)/blSpeeds.length).toFixed(3),
+      avgBR: (brSpeeds.reduce((a,b)=>a+b,0)/brSpeeds.length).toFixed(3),
+    };
+  };
+
+  const mA = metrics(recA, recA.label);
+  const mB = metrics(recB, recB.label);
+
+  document.getElementById('ana-metrics').innerHTML = `
+    <h3 style="font-size:12px;margin-bottom:8px">📊 对比指标</h3>
+    <table>
+      <tr><th>指标</th><th>${mA.label}</th><th>${mB.label}</th></tr>
+      <tr><td style="color:var(--text-dim)">帧数</td><td>${mA.count}</td><td>${mB.count}</td></tr>
+      <tr><td style="color:var(--text-dim)">时长 (s)</td><td>${mA.duration.toFixed(2)}</td><td>${mB.duration.toFixed(2)}</td></tr>
+      <tr><td style="color:var(--text-dim)">最大速度</td><td>${mA.maxSpeed}</td><td>${mB.maxSpeed}</td></tr>
+      <tr><td style="color:var(--text-dim)">平均速度</td><td>${mA.avgSpeed}</td><td>${mB.avgSpeed}</td></tr>
+      <tr><td style="color:var(--text-dim)">FL 平均</td><td>${mA.avgFL}</td><td>${mB.avgFL}</td></tr>
+      <tr><td style="color:var(--text-dim)">FR 平均</td><td>${mA.avgFR}</td><td>${mB.avgFR}</td></tr>
+      <tr><td style="color:var(--text-dim)">BL 平均</td><td>${mA.avgBL}</td><td>${mB.avgBL}</td></tr>
+      <tr><td style="color:var(--text-dim)">BR 平均</td><td>${mA.avgBR}</td><td>${mB.avgBR}</td></tr>
+    </table>
+  `;
+}
+
+// ================================================================
+//  STATE TIMELINE (轨迹图下方横条)
+// ================================================================
+const STATE_COLORS = [
+  '#8b949e',  // 0 DEBUG
+  '#8b949e',  // 1 IDLE
+  '#3fb950',  // 2 LINE_FOLLOW
+  '#f85149',  // 3 OBSTACLE
+  '#3fb950',  // 4 FINISH
+  '#a371f7',  // 5 BRANCH_ENTER
+  '#a371f7',  // 6 BRANCH_FOLLOW
+  '#a371f7',  // 7 BRANCH_JUDGE
+  '#a371f7',  // 8 BRANCH_REVERSE
+  '#ff6b6b',  // 9 ZONE_RETURN
+];
+
+function updateStateTimeline() {
+  var bar = document.getElementById('state-timeline-bar');
+  if (!bar) return;
+  var now = performance.now();
+  var windowMs = 30000;  // 30 second window
+  var cutoff = now - windowMs;
+
+  // Build segments from stateHistory
+  var history = state.stateHistory;
+  if (history.length === 0) {
+    bar.innerHTML = '<span style="font-size:9px;color:var(--text-dim);padding:0 4px">等待状态数据...</span>';
+    return;
+  }
+
+  // Get visible segments
+  var segments = [];
+  for (var i = 0; i < history.length; i++) {
+    var entry = history[i];
+    var tStart = entry.tick;
+    var tEnd = (i + 1 < history.length) ? history[i + 1].tick : now;
+    if (tEnd < cutoff) continue;   // entirely before window
+    if (tStart > now) continue;    // future (shouldn't happen)
+    // Clamp to window
+    if (tStart < cutoff) tStart = cutoff;
+
+    var duration = tEnd - tStart;
+    if (duration <= 0) continue;
+    segments.push({
+      state: entry.state,
+      duration: duration,
+      color: STATE_COLORS[entry.state] || '#8b949e',
+    });
+  }
+
+  if (segments.length === 0) {
+    bar.innerHTML = '';
+    return;
+  }
+
+  var totalDuration = segments.reduce(function(a,b){return a+b.duration;}, 0);
+  if (totalDuration <= 0) { bar.innerHTML = ''; return; }
+
+  var html = '';
+  for (var i = 0; i < segments.length; i++) {
+    var seg = segments[i];
+    var pct = (seg.duration / windowMs * 100).toFixed(1);
+    if (pct < 0.3) continue;  // skip very thin segments
+    var label = STATE_LABELS[seg.state] || '';
+    html += '<span title="' + label + '" style="flex:0 0 ' + pct + '%;background:' + seg.color + ';height:100%;border-radius:2px;min-width:2px"></span>';
+  }
+  bar.innerHTML = html;
+
+  // Show current state label
+  var curLabel = STATE_LABELS[state.chassisState] || '--';
+  var labelEl = document.getElementById('state-timeline-label');
+  if (!labelEl) {
+    // We don't have a dedicated label - the timeline prefix is the "状态" span
+  }
+}
+
+// ================================================================
+//  PID ACTIONS
+// ================================================================
+function runStepTest() {
+  const target = document.getElementById('step-target').value;
+  const duration = document.getElementById('step-dur').value;
+  const statusEl = document.getElementById('step-status');
+
+  if (!state.serialConnected) {
+    alert('请先连接串口');
+    return;
+  }
+
+  statusEl.textContent = '切DEBUG→执行中...';
+  statusEl.style.color = 'var(--yellow)';
+
+  // 1. 先切 DEBUG（T 命令只在 DEBUG 有效）
+  sendCmd('MD');
+  // 2. 选全部轮子
+  setTimeout(() => sendCmd('WA'), 80);
+  // 3. 设目标速度
+  setTimeout(() => sendCmd(`T${target}`), 130);
+
+  // 4. 持续时间后停车
+  const durMs = parseFloat(duration) * 1000;
+  setTimeout(() => {
+    sendCmd('WA');
+    setTimeout(() => sendCmd('T0'), 50);
+    statusEl.textContent = '完成 ✓';
+    statusEl.style.color = 'var(--green)';
+  }, durMs + 150);
+}
+
+function toggleTrack() {
+  state.track.showTrack = !state.track.showTrack;
+  var btn = document.getElementById('track-toggle');
+  if (btn) {
+    btn.textContent = state.track.showTrack ? '隐藏' : '显示';
+    btn.style.background = state.track.showTrack ? 'var(--green)' : 'var(--bg)';
+    btn.style.color = state.track.showTrack ? '#fff' : 'var(--text)';
+  }
+  trajView.draw();
+}
+
+function stopMotor() {
+  sendCmd('WA');
+  setTimeout(() => sendCmd('T0'), 40);
+  document.getElementById('step-status').textContent = '已停车';
+  document.getElementById('step-status').style.color = 'var(--text)';
+}
+
+function switchMode(cmd) {
+  sendCmd(cmd);
+  if (cmd === 'MD' || cmd === 'M0') {
+    setTimeout(() => {
+      sendCmd('WA');
+      setTimeout(() => sendCmd('T0'), 50);
+    }, 100);
+  }
+  const modeNames = {
+    'MD':'DEBUG', 'M0':'IDLE', 'M1':'巡线', 'M2':'避障',
+    'M3':'完成', 'M4':'岔入', 'M5':'岔巡', 'M6':'判定', 'M7':'倒回','M8':'返程'
+  };
+  var modeStateIds = { 'MD':0,'M0':1,'M1':2,'M2':3,'M3':4,'M4':5,'M5':6,'M6':7,'M7':8,'M8':9 };
+  document.getElementById('cur-mode').textContent = cmd + ' ' + (modeNames[cmd]||'');
+  // 立刻更新状态徽章,不等 S: 回传
+  var sid = modeStateIds[cmd];
+  if (sid !== undefined) {
+    state.chassisState = sid;
+    // 设置待确认标记：500ms 内数据帧不回退此状态，等 S: 回传确认
+    state.statePending = sid;
+    state.statePendingUntil = performance.now() + 500;
+    var badge = document.getElementById('state-badge');
+    if (badge) {
+      badge.textContent = modeNames[cmd] || cmd;
+      var sc = ['background:#8b949e;color:#000','background:#8b949e;color:#000',
+        'background:#3fb950;color:#000','background:#f85149;color:#fff',
+        'background:#3fb950;color:#000','background:#a371f7;color:#fff',
+        'background:#a371f7;color:#fff','background:#a371f7;color:#fff',
+        'background:#a371f7;color:#fff','background:#ff6b6b;color:#fff'];
+      badge.style.cssText = sc[sid] || '';
+    }
+  }
+  document.querySelectorAll('#mode-btns button').forEach(b => {
+    b.style.outline = (b.dataset.mode === cmd) ? '2px solid var(--accent)' : 'none';
+  });
+}
+
+function readParams() {
+  // 从 STM32 读取当前参数 (如果固件支持，否则手动)
+  alert('"读取参数" 需要固件支持响应指令。\n当前请手动确认参数值。');
+}
+
+async function setGyroScale(val) {
+  const scale = parseFloat(val);
+  if (isNaN(scale) || scale < 0.5 || scale > 3.0) return;
+  await fetch('/api/gyro/scale', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({scale}),
+  });
+  resetOdom();  // 清空初始对齐，下帧用新比例重新对齐
+}
+async function setWheelTrack(val) {
+  const track = parseFloat(val);
+  if (isNaN(track) || track <= 0) return;
+  await fetch('/api/odom/track', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({track}),
+  });
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({action:'set_track', track}));
+  }
+}
+
+async function resetOdom() {
+  await fetch('/api/odom/reset', {method:'POST'});
+  trajView.clear();
+  trajView.draw();  // 内部自动同步 trackMap
+  state.totalDist = 0;
+  state.lastX = 0;
+  state.lastY = 0;
+  // 清除陀螺仪初始校准值，下次收到 Y: 帧时重新对齐
+  delete state._gyroFirstYaw;
+  delete state._gyroFirstOdomH;
+  delete state.mpuStatus;
+  delete state.mpuWarmup;
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({action:'reset_odom'}));
+  }
+}
+
+// ================================================================
+//  TAB SWITCHING
+// ================================================================
+document.getElementById('tabnav').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-tab]');
+  if (!btn) return;
+
+  // 更新 tab 样式
+  document.querySelectorAll('#tabnav button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+
+  // 切换面板
+  const tabId = 'tab-' + btn.dataset.tab;
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  const panel = document.getElementById(tabId);
+  if (panel) panel.classList.add('active');
+
+  // Tab 特定初始化
+  if (btn.dataset.tab === 'recorder') loadRecordings();
+  if (btn.dataset.tab === 'profiles') loadProfiles();
+  if (btn.dataset.tab === 'analysis') loadAnalysisRecordings();
+  if (btn.dataset.tab === 'statemachine') { setTimeout(() => { if (fsmView) { fsmView.resize(); fsmView.draw(); updateFsmLog(); } }, 300); }
+
+  // 重绘轨迹
+  setTimeout(() => { trajView.resize(); trajView.draw(); }, 100);
+});
+
+// ================================================================
+//  WHEEL SELECT
+// ================================================================
+document.getElementById('wheel-sel').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-w]');
+  if (!btn) return;
+  document.querySelectorAll('#wheel-sel button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  state.selectedWheel = btn.dataset.w;
+  updateSliderValues();
+});
+
+// ================================================================
+//  TRAJECTORY CANVAS EVENTS
+// ================================================================
+function setupTrajectoryEvents() {
+  const cv = trajCanvas;
+
+  cv.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const zoom = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+    const rect = cv.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+
+    const oldScale = trajView.scale;
+    trajView.scale = Math.max(3, Math.min(3000, trajView.scale * zoom));
+    // 缩放中心校正
+    const ratio = trajView.scale / oldScale;
+    trajView.cx = mx - (mx - trajView.cx) * ratio;
+    trajView.cy = my - (my - trajView.cy) * ratio;
+    trajView.draw();
+  }, {passive: false});
+
+  cv.addEventListener('mousedown', (e) => {
+    if (e.button === 0) {
+      trajView.dragging = true;
+      trajView.dragStart = {x: e.clientX, y: e.clientY};
+      trajView.dragCx0 = trajView.cx;
+      trajView.dragCy0 = trajView.cy;
+    }
+  });
+
+  cv.addEventListener('mousemove', (e) => {
+    if (trajView.dragging) {
+      const dx = e.clientX - trajView.dragStart.x;
+      const dy = e.clientY - trajView.dragStart.y;
+      trajView.cx = trajView.dragCx0 + dx;
+      trajView.cy = trajView.dragCy0 + dy;
+      trajView.draw();
+    }
+
+    // 悬停提示
+    if (trajView.points.length > 0) {
+      const rect = cv.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      const wp = trajView.s2w(mx, my);
+
+      // 找最近点
+      let minDist = Infinity;
+      let nearest = null;
+      const searchStart = Math.max(0, trajView.points.length - 1000);
+      for (let i = searchStart; i < trajView.points.length; i++) {
+        const p = trajView.points[i];
+        const dist = (p.x - wp.x)**2 + (p.y - wp.y)**2;
+        if (dist < minDist) {
+          minDist = dist;
+          nearest = p;
+        }
+      }
+
+      if (nearest && minDist < 0.01) {  // within 10cm in world coords
+        const hint = document.getElementById('traj-hint');
+        const hDeg = (nearest.h * 180 / Math.PI).toFixed(0);
+        hint.textContent = `📍 x=${nearest.x.toFixed(2)} y=${nearest.y.toFixed(2)} v=${nearest.v.toFixed(2)}m/s θ=${hDeg}°`;
+      }
+    }
+  });
+
+  cv.addEventListener('mouseup', () => { trajView.dragging = false; });
+  cv.addEventListener('mouseleave', () => { trajView.dragging = false; });
+
+  cv.addEventListener('dblclick', () => {
+    trajView.resetView();
+    trajView.draw();
+  });
+
+  cv.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    resetOdom();
+  });
+
+  window.addEventListener('resize', () => {
+    trajView.resize();
+    if (trackMap) trackMap.resize();
+    trajView.draw();
+  });
+}
+
+
+// ================================================================
+//  STATE MACHINE VISUALIZATION
+// ================================================================
+const STATE_NAMES = [
+  "DEBUG", "IDLE", "LINE_FOLLOW", "OBSTACLE",
+  "FINISH", "BRANCH_ENTER", "BRANCH_FOLLOW", "BRANCH_JUDGE", "BRANCH_REVERSE", "ZONE_RETURN"
+];
+
+const STATE_LABELS = [
+  "调试", "待机", "巡线", "避障",
+  "完成", "岔入", "岔巡", "判定", "倒回", "返程"
+];
+
+// Node layout (x%, y%) relative to canvas (9 states)
+const NODE_POS = [
+  [20, 10],  // 0: DEBUG
+  [20, 25],  // 1: IDLE
+  [20, 42],  // 2: LINE_FOLLOW
+  [70, 42],  // 3: OBSTACLE
+  [70, 80],  // 4: FINISH
+  [55, 58],  // 5: BRANCH_ENTER
+  [55, 72],  // 6: BRANCH_FOLLOW
+  [40, 85],  // 7: BRANCH_JUDGE
+  [25, 72],  // 8: BRANCH_REVERSE
+  [10, 85],  // 9: ZONE_RETURN
+];
+
+// Transitions: [from, to] (9-state v2)
+const TRANSITIONS = [
+  [0,1],[1,0],[1,2],[2,1],[2,3],[3,2],
+  [2,5],[5,6],[6,7],[7,8],[8,2],
+  [2,4],
+  [8,9],[9,1],
+];
+
+function stateColor(id) {
+  const colors = [
+    "#8b949e","#8b949e","#3fb950","#f85149",
+    "#3fb950","#a371f7","#a371f7","#ff6b6b","#a371f7","#a371f7"
+  ];
+  return colors[id] || "#8b949e";
+}
+
+class FsmView {
+  constructor(canvas) {
+    this.cv = canvas;
+    this.ctx = canvas.getContext("2d");
+    this.stateCounts = new Array(10).fill(0);
+    this.currentState = 0;
+    this.pulsePhase = 0;
+    this.resize();
+  }
+
+  resize() {
+    const w = this.cv.parentElement.clientWidth;
+    const h = this.cv.parentElement.clientHeight;
+    this.cv.width = w;
+    this.cv.height = h;
+    this.w = w;
+    this.h = h;
+  }
+
+  setState(id, incCount) {
+    if (id >= 0 && id < 10) {
+      if (incCount && id !== this.currentState) {
+        this.stateCounts[id] = (this.stateCounts[id] || 0) + 1;
+      }
+      this.currentState = id;
+    }
+  }
+
+  nodeX(i) { return NODE_POS[i][0] / 100 * this.w; }
+  nodeY(i) { return NODE_POS[i][1] / 100 * this.h; }
+
+  draw() {
+    const ctx = this.ctx;
+    const w = this.w;
+    const h = this.h;
+    ctx.clearRect(0, 0, w, h);
+
+    ctx.fillStyle = "#0d1117";
+    ctx.fillRect(0, 0, w, h);
+
+    // Draw transitions
+    for (const [from, to] of TRANSITIONS) {
+      const x1 = this.nodeX(from);
+      const y1 = this.nodeY(from);
+      const x2 = this.nodeX(to);
+      const y2 = this.nodeY(to);
+
+      const isActive = (to === this.currentState);
+      ctx.strokeStyle = isActive ? stateColor(to) : "#21262d";
+      ctx.lineWidth = isActive ? 2 : 1;
+      ctx.globalAlpha = isActive ? 0.8 : 0.35;
+
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      if (Math.abs(dx) < 30 && Math.abs(dy) > 20) {
+        const cp = Math.abs(dy) * 0.4;
+        ctx.bezierCurveTo(x1 - cp, y1 + dy * 0.3, x2 - cp, y2 - dy * 0.3, x2, y2);
+      } else {
+        ctx.lineTo(x2, y2);
+      }
+      ctx.stroke();
+
+      // Arrowhead
+      if (from !== to) {
+        const angle = Math.atan2(y2 - y1, x2 - x1);
+        const ax = x2 - Math.cos(angle) * 18;
+        const ay = y2 - Math.sin(angle) * 18;
+        ctx.fillStyle = ctx.strokeStyle;
+        ctx.beginPath();
+        ctx.moveTo(ax + Math.cos(angle) * 8, ay + Math.sin(angle) * 8);
+        ctx.lineTo(ax + Math.cos(angle + 2.5) * 5, ay + Math.sin(angle + 2.5) * 5);
+        ctx.lineTo(ax + Math.cos(angle - 2.5) * 5, ay + Math.sin(angle - 2.5) * 5);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+
+    // Draw nodes
+    for (let i = 0; i < 10; i++) {
+      const x = this.nodeX(i);
+      const y = this.nodeY(i);
+      const isCurrent = (i === this.currentState);
+      const r = isCurrent ? 18 : 13;
+
+      // Pulse glow
+      if (isCurrent) {
+        this.pulsePhase += 0.02;
+        const glowR = r + 6 + Math.sin(this.pulsePhase * 3) * 3;
+        const grad = ctx.createRadialGradient(x, y, r * 0.5, x, y, glowR);
+        grad.addColorStop(0, stateColor(i));
+        grad.addColorStop(1, "transparent");
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(x, y, glowR, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Circle
+      ctx.fillStyle = stateColor(i);
+      ctx.strokeStyle = isCurrent ? "#fff" : "#30363d";
+      ctx.lineWidth = isCurrent ? 2.5 : 1;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // Count
+      if (this.stateCounts[i] > 0) {
+        ctx.fillStyle = "#fff";
+        ctx.font = "9px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText(this.stateCounts[i], x, y + r + 13);
+      }
+
+      // Label
+      ctx.fillStyle = isCurrent ? "#fff" : "#8b949e";
+      ctx.font = (isCurrent ? "bold " : "") + "11px monospace";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      ctx.fillText(STATE_LABELS[i], x, y + r + 4);
+    }
+  }
+}
+
+let fsmView = null;
+
+function updateFsmLegend() {
+  const legendEl = document.getElementById("fsm-legend");
+  const statsEl = document.getElementById("fsm-stats");
+  if (!legendEl || !statsEl || !fsmView) return;
+
+  const groups = [
+    {name: "主循环", ids: [0,1,2]},
+    {name: "岔路链", ids: [5,6,7,8]},
+    {name: "其他", ids: [3,4]},
+  ];
+  legendEl.innerHTML = groups.map(function(g) {
+    var items = g.ids.map(function(i) {
+      var isCur = i === fsmView.currentState;
+      return `<span style="display:inline-block;margin:0 2px;padding:1px 4px;border-radius:3px;font-size:10px;background:${stateColor(i)}22;color:${stateColor(i)};${isCur ? 'font-weight:bold;border:1px solid ' + stateColor(i) : ''}">${isCur ? '▶ ' : ''}${STATE_LABELS[i]}</span>`;
+    }).join("");
+    return '<div style="margin-bottom:6px"><b style="color:var(--text-dim)">' + g.name + '</b><br>' + items + '</div>';
+  }).join("");
+
+  var total = fsmView.stateCounts.reduce(function(a,b) { return a + b; }, 0);
+  var rows = "";
+  for (var i = 0; i < 9; i++) {
+    if (fsmView.stateCounts[i] > 0) {
+      rows += '<div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + stateColor(i) + ';margin-right:4px"></span>' + STATE_LABELS[i] + ': <b>' + fsmView.stateCounts[i] + '</b></div>';
+    }
+  }
+  statsEl.innerHTML = "<div>转移次数: <b>" + total + "</b></div>" + (rows || "暂无");
+}
+
+setInterval(function() {
+  try {
+    var tab = document.getElementById("tab-statemachine");
+    if (tab && tab.classList.contains("active")) {
+      if (fsmView) {
+        if (fsmView.w === 0 || fsmView.h === 0) {
+          fsmView.resize();
+        }
+        fsmView.setState(state.chassisState, true);
+        fsmView.draw();
+        updateFsmLegend();
+      }
+      // 更新大标题
+      var bigEl = document.getElementById('fsm-current-big');
+      if (bigEl) {
+        var sid = state.chassisState;
+        bigEl.textContent = (STATE_LABELS[sid] || '??') + ' [' + (STATE_NAMES[sid] || '??') + ']';
+        bigEl.style.color = STATE_COLORS[sid] || '#8b949e';
+      }
+      // 更新转移日志
+      updateFsmLog();
+    }
+  } catch(e) {
+    console.error('FSM update error:', e);
+  }
+}, 200);
+
+// 转移日志：显示最近 20 条状态变更
+var _fsmLogRendered = 0;
+function updateFsmLog() {
+  var logEl = document.getElementById('fsm-log');
+  if (!logEl) return;
+  var history = state.stateHistory;
+  if (history.length === _fsmLogRendered) return;  // no new entries
+  _fsmLogRendered = history.length;
+
+  if (history.length === 0) {
+    logEl.innerHTML = '<div style="text-align:center;padding:10px">等待状态变更...</div>';
+    return;
+  }
+
+  // Show last 20 entries, newest first
+  var entries = history.slice(-20).reverse();
+  var now = performance.now();
+  var html = '';
+  for (var i = 0; i < entries.length; i++) {
+    var e = entries[i];
+    var ago = ((now - e.tick) / 1000).toFixed(1);
+    var label = STATE_LABELS[e.state] || '??';
+    var color = STATE_COLORS[e.state] || '#8b949e';
+    html += '<div style="display:flex;align-items:center;gap:4px;padding:1px 0;border-bottom:1px solid #21262d">' +
+      '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:' + color + ';flex-shrink:0"></span>' +
+      '<span style="flex:1">' + label + '</span>' +
+      '<span style="color:var(--text-dim)">' + ago + 's前</span>' +
+      '</div>';
+  }
+  logEl.innerHTML = html;
+}
+
+
+// ================================================================
+//  INIT
+// ================================================================
+// ================================================================
+//  ZONE MANAGEMENT
+// ================================================================
+let zones = [];           // [{id, label, distance_cm, side, encoder}]
+let activeZoneId = 0;     // 当前正在演示的 Zone ID
+let zoneBranchLen = 0.40; // 分支线长度 (m), 默认 40cm
+
+function getEncPerCm() {
+  return parseInt(document.getElementById('zone-enc-per-cm').value) || 2707;
+}
+
+function onEncPerCmChange() {
+  // 重算所有 Zone 的编码器值
+  var epc = getEncPerCm();
+  for (var i = 0; i < zones.length; i++) {
+    zones[i].encoder = Math.round(zones[i].distance_cm * epc);
+  }
+  renderZoneList();
+}
+
+function onBranchLenChange() {
+  zoneBranchLen = (parseInt(document.getElementById('zone-branch-len').value) || 40) / 100.0;
+  if (trajView) trajView.draw();
+}
+
+function addZoneByDist() {
+  var nameEl = document.getElementById('zone-name-input');
+  var distEl = document.getElementById('zone-dist-input');
+  var label = nameEl.value.trim();
+  var distCm = parseInt(distEl.value);
+
+  if (!label) { alert('请输入 Zone 名称'); return; }
+  if (!distCm || distCm <= 0) { alert('请输入有效距离 (cm)'); return; }
+
+  var id = zones.length + 1;
+  var encPerCm = getEncPerCm();
+  var encoder = Math.round(distCm * encPerCm);
+
+  // START在左上角: 左直道(235cm)→底弯(204cm)→右直道(250cm)
+  // dist <= 左直道长度 = 左直道(side=-1), dist > 左直道+底弯 = 右直道(side=1)
+  var leftLen = 235;   // cm, 左直道从START到底部
+  var botArc = Math.round(Math.PI * 65);  // cm, π*65cm ≈ 204cm
+  var side = (distCm <= leftLen + botArc) ? -1 : 1;
+
+  zones.push({
+    id: id,
+    label: label,
+    distance_cm: distCm,
+    side: side,
+    encoder: encoder
+  });
+  zones.sort(function(a,b){return a.distance_cm - b.distance_cm;});
+  // 重新编号
+  for (var i = 0; i < zones.length; i++) zones[i].id = i + 1;
+
+  nameEl.value = '';
+  distEl.value = '';
+  renderZoneList();
+  if (trajView) trajView.draw();
+}
+
+function clearZones() {
+  if (!confirm('清空所有 Zone？')) return;
+  zones = [];
+  activeZoneId = 0;
+  renderZoneList();
+  if (trajView) trajView.draw();
+}
+
+function deleteZone(idx) {
+  if (activeZoneId === zones[idx].id) activeZoneId = 0;
+  zones.splice(idx, 1);
+  for (var i = 0; i < zones.length; i++) zones[i].id = i + 1;
+  renderZoneList();
+  if (trajView) trajView.draw();
+}
+
+function demoZone(idx) {
+  var z = zones[idx];
+  if (!z) return;
+  if (!state.serialConnected) { alert('请先连接串口'); return; }
+
+  activeZoneId = z.id;
+  if (trajView) trajView.draw();
+
+  console.log('Zone Demo start: ' + z.label + ' dist=' + z.distance_cm + 'cm enc=' + z.encoder);
+
+  // 取消可能残留的 Zone Demo → IDLE → 等300ms → 发 Z: 命令
+  sendCmd('M0');  // IDLE, 会重置 g_zone_active=0
+  setTimeout(function() {
+    var cmd = 'Z' + z.id + ',' + z.encoder;
+    console.log('Sending: ' + cmd);
+    sendCmd(cmd);
+  }, 400);
+  setTimeout(function() {
+    document.getElementById('cur-mode').textContent = 'Zone #' + z.id + ' 执行中';
+  }, 600);
+}
+
+function renderZoneList() {
+  var el = document.getElementById('zone-list');
+  if (!el) return;
+  if (zones.length === 0) {
+    el.innerHTML = '<div style="font-size:9px;color:var(--text-dim);text-align:center">输入距离(cm)添加 Zone</div>';
+    return;
+  }
+  el.innerHTML = zones.map(function(z, i) {
+    var sideName = z.side === 1 ? '右直道' : '左直道';
+    var isActive = (activeZoneId === z.id);
+    var bgColor = isActive ? '#2e1a1a' : '';
+    return '<div class="zone-item" style="' + (bgColor ? 'background:' + bgColor + ';border-color:#ff6b6b' : '') + '">' +
+      '<span class="zid">#' + z.id + '</span>' +
+      '<span>' + z.label + '</span>' +
+      '<span style="font-size:8px;color:var(--text-dim)">' + z.distance_cm + 'cm ' + sideName + '</span>' +
+      '<span class="zenc">目标:' + z.encoder + '</span>' +
+      '<button class="zgo" onclick="demoZone(' + i + ')">▶</button>' +
+      '<button class="zdel" onclick="deleteZone(' + i + ')">×</button>' +
+      '</div>';
+  }).join('');
+}
+
+// ================================================================
+//  STRAWBERRY STATS
+// ================================================================
+let zoneHistory = [];  // [{zone, red, green, time}]
+
+function handleSummary(f) {
+  document.getElementById('stat-red').textContent = f.red_total;
+  document.getElementById('stat-green').textContent = f.green_total;
+  document.getElementById('stat-zones').textContent = f.zone;
+
+  zoneHistory.push({
+    zone: f.zone,
+    red: f.red_total,
+    green: f.green_total,
+    time: new Date().toLocaleTimeString()
+  });
+  if (zoneHistory.length > 20) zoneHistory.shift();
+
+  // 更新历史表格
+  var histEl = document.getElementById('zone-history');
+  if (histEl) {
+    histEl.innerHTML = zoneHistory.slice().reverse().map(function(h) {
+      return '<div class="zone-history-row">' +
+        '<span>Zone #' + h.zone + '</span>' +
+        '<span style="color:#ff6b6b">R:' + h.red + '</span>' +
+        '<span style="color:#3fb950">G:' + h.green + '</span>' +
+        '<span style="color:var(--text-dim)">' + h.time + '</span>' +
+        '</div>';
+    }).join('');
+  }
+}
+
+
+function init() {
+  // 速度条
+  createSpeedBars();
+
+  // PID 滑块
+  createSliders();
+  updateSliderValues();
+
+  // 赛道地图（背景层）
+  const trackCanvas = document.getElementById('track-canvas');
+  if (trackCanvas) {
+    trackMap = new TrackMap(trackCanvas);
+  }
+
+  // 轨迹图（前景层）
+  trajCanvas = document.getElementById('traj-canvas');
+  trajCtx = trajCanvas.getContext('2d');
+  trajView = new TrajectoryView(trajCanvas);
+  trajView.draw();
+  setupTrajectoryEvents();
+
+  // 延迟重绘：等待 CSS Grid 布局完成，避免 canvas 初始化尺寸为 0
+  setTimeout(function() {
+    trajView.resize();
+    if (trackMap) trackMap.resize();
+    trajView.draw();
+  }, 250);
+
+  // 状态机画布
+  const fsmCanvas = document.getElementById('fsm-canvas');
+  if (fsmCanvas) {
+    fsmView = new FsmView(fsmCanvas);
+    fsmView.draw();
+  }
+
+  // 指南针
+  compassCtx = document.getElementById('compass-canvas').getContext('2d');
+  drawCompass(0);
+
+  // 波形图
+  initWaveformChart();
+
+  // WebSocket
+  connectWs();
+
+  // 检测服务器端串口是否已连接
+  fetch('/api/status').then(r=>r.json()).then(s=>{
+    if (s.connected) {
+      state.serialConnected = true;
+      state.port = s.port || 'COM3';
+      document.getElementById('hport').value = state.port;
+      updateConnectionUI();
+    }
+  });
+
+  // 端口输入
+  document.getElementById('hport').value = state.port;
+
+  // 加载数据
+  loadRecordings();
+  loadProfiles();
+}
+
+// ════════════════════════════════════════════════════════════
+//  SIMULATION removed — not needed
+// ════════════════════════════════════════════════════════════
+
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+
+</body>
+</html>

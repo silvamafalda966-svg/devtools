@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🍓 理想运行轨迹 — 草莓采摘机器人</title>
+<style>
+:root {
+  --bg: #0d1117;
+  --accent: #58a6ff;
+  --green: #3fb950;
+  --red: #f85149;
+  --orange: #db6d28;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  height: 100vh; overflow: hidden;
+  font-family: 'Segoe UI', monospace;
+}
+canvas { display: block; }
+#controls {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 12px; z-index: 10;
+}
+#controls button {
+  background: #161b22; border: 1px solid #30363d;
+  color: #c9d1d9; padding: 10px 24px; border-radius: 8px;
+  cursor: pointer; font-size: 14px;
+}
+#controls button:hover { border-color: var(--accent); color: #fff; }
+#controls button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+#info {
+  position: fixed; top: 20px; left: 20px;
+  color: #8b949e; font-size: 12px; line-height: 1.8;
+  pointer-events: none; z-index: 10;
+}
+#info .phase { color: var(--accent); font-weight: bold; }
+#phase-label {
+  position: fixed; top: 20px; right: 40px;
+  color: #fff; font-size: 20px; font-weight: bold;
+  pointer-events: none; z-index: 10;
+  background: rgba(13,17,23,0.85); padding: 8px 20px;
+  border-radius: 6px; border: 1px solid #30363d;
+  opacity: 0; transition: opacity 0.3s;
+}
+</style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+<div id="info">
+  理想运行轨迹<br>
+  <span style="color:#3fb950">●</span> 巡线 &nbsp;
+  <span style="color:#58a6ff">●</span> 岔路 &nbsp;
+  <span style="color:#f85149">●</span> 判定 &nbsp;
+  <span style="color:#d2991d">●</span> 返程
+</div>
+<div id="phase-label"></div>
+<div id="controls">
+  <button id="btn-animate" class="active">▶ 播放动画</button>
+  <button id="btn-full">⏸ 静态全貌</button>
+  <button id="btn-reset">↺ 重置</button>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════
+// TRACK PARAMETERS (same as car-studio)
+// ═══════════════════════════════════════════════
+const SL = 2.5;        // straight length (m)
+const CR = 0.65;       // curve radius (m)
+const LW = 0.03;       // track line width
+const ox = -0.65;      // offset X
+const oy = -1.10;      // offset Y
+const halfSL = SL / 2;
+const topY = oy + halfSL;   // 0.15
+const botY = oy - halfSL;   // -2.35
+const startY = topY - 0.15; // 0.0 = START
+const leftX  = ox - CR;     // -1.30 (left straight centerline)
+const rightX = ox + CR;     // 0.00 (right straight centerline)
+const arcLen = Math.PI * CR; // bottom curve arc length ≈ 2.042m
+
+// Branch parameters
+const BRANCH_Y = botY + 1.35;  // branch on right straight, 1.35m from bottom
+const BRANCH_DEPTH = 0.45;     // branch line depth into inner area
+const BERRY_X = rightX + BRANCH_DEPTH;  // end of branch (berry zone)
+const BERRY_Y = BRANCH_Y;
+
+// ═══════════════════════════════════════════════
+// CANVAS SETUP
+// ═══════════════════════════════════════════════
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+let cx, cy, scale;
+
+function resize() {
+  canvas.width = window.innerWidth * devicePixelRatio;
+  canvas.height = window.innerHeight * devicePixelRatio;
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+
+  const w = window.innerWidth, h = window.innerHeight;
+  // Fit the entire track + branch area
+  const worldW = Math.abs(rightX - leftX) + BRANCH_DEPTH + 0.6;
+  const worldH = SL + CR * 2 + 0.6;
+  scale = Math.min((w - 80) / worldW, (h - 120) / worldH);
+  cx = w / 2 - (leftX + rightX + BRANCH_DEPTH) / 2 * scale + 20;
+  cy = h / 2;
+}
+
+window.addEventListener('resize', resize);
+
+// ═══════════════════════════════════════════════
+// DRAWING HELPERS
+// ═══════════════════════════════════════════════
+function w2s(wx, wy) {
+  return { x: wx * scale + cx, y: -wy * scale + cy };
+}
+
+function drawTrack() {
+  const ringO = CR + LW * 1.2;
+  const ringI = CR - LW * 1.2;
+
+  // Grass
+  ctx.fillStyle = '#1a2e1a';
+  ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+
+  // Track ring
+  function ovalPath(r) {
+    const tc = w2s(ox, topY);
+    const bc = w2s(ox, botY);
+    const lt = w2s(ox - r, topY);
+    const rt = w2s(ox + r, topY);
+    const rb = w2s(ox + r, botY);
+    ctx.moveTo(lt.x, lt.y);
+    ctx.arc(tc.x, tc.y, r * scale, Math.PI, 0, false);
+    ctx.lineTo(rb.x, rb.y);
+    ctx.arc(bc.x, bc.y, r * scale, 0, Math.PI, false);
+    ctx.closePath();
+  }
+
+  ctx.fillStyle = 'rgba(200,130,70,0.3)';
+  ctx.beginPath(); ovalPath(ringO); ovalPath(ringI);
+  ctx.fill('evenodd');
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 2.5;
+  ctx.setLineDash([]);
+  ctx.beginPath(); ovalPath(ringO); ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ovalPath(ringI); ctx.stroke();
+
+  // Centerline dashes
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 1;
+  ctx.setLineDash([0.25 * scale, 0.2 * scale]);
+  ctx.beginPath(); ovalPath(CR); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // START line
+  const s1 = w2s(leftX - 0.3, startY);
+  const s2 = w2s(rightX + 0.3, startY);
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y); ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 14px monospace'; ctx.textAlign = 'center';
+  ctx.fillText('START', (s1.x + s2.x) / 2, s1.y - 8);
+
+  // Direction arrows
+  for (let ay = botY + 0.3; ay < startY - 0.3; ay += 0.5) {
+    for (let side of [-1, 1]) {
+      const ax = ox + side * CR;
+      const ap = w2s(ax, ay);
+      ctx.fillStyle = 'rgba(255,255,255,0.1)';
+      ctx.beginPath();
+      if (side === -1) {
+        // Left straight: going DOWN
+        ctx.moveTo(ap.x, ap.y + 6);
+        ctx.lineTo(ap.x, ap.y - 6);
+        ctx.lineTo(ap.x - 5, ap.y);
+      } else {
+        // Right straight: going UP
+        ctx.moveTo(ap.x, ap.y - 6);
+        ctx.lineTo(ap.x, ap.y + 6);
+        ctx.lineTo(ap.x + 5, ap.y);
+      }
+      ctx.closePath(); ctx.fill();
+    }
+  }
+
+  // Branch line
+  const bj = w2s(rightX, BRANCH_Y);
+  const be = w2s(BERRY_X, BERRY_Y);
+  const bt = w2s(rightX + 0.08, BRANCH_Y);
+
+  // T-junction marker
+  ctx.fillStyle = '#ff6b6b';
+  ctx.fillRect(bj.x - 6, bj.y - 6, 12, 12);
+
+  // Branch dashed line
+  ctx.strokeStyle = '#ff6b6b'; ctx.lineWidth = 2.5;
+  ctx.setLineDash([0.12 * scale, 0.08 * scale]);
+  ctx.beginPath();
+  ctx.moveTo(bt.x, bt.y);
+  ctx.lineTo(be.x, be.y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Berry zone circle
+  ctx.fillStyle = 'rgba(251,73,73,0.25)'; ctx.strokeStyle = '#f85149'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(be.x, be.y, 0.12 * scale, 0, Math.PI * 2);
+  ctx.fill(); ctx.stroke();
+
+  // Berry label
+  ctx.fillStyle = '#f85149'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center';
+  ctx.fillText('🍓 草莓区', be.x, be.y + 0.18 * scale + 14);
+
+  // T-junction label
+  ctx.fillStyle = '#ff6b6b'; ctx.font = '10px monospace';
+  ctx.fillText('T型岔路', bj.x + 20, bj.y - 10);
+}
+
+// ═══════════════════════════════════════════════
+// IDEAL TRAJECTORY GENERATION
+// ═══════════════════════════════════════════════
+function generateIdealTrajectory() {
+  const pts = [];
+  const step = 0.02; // 2cm step
+
+  // Phase 1: Left straight going DOWN from START
+  for (let y = startY; y >= botY; y -= step) {
+    pts.push({ x: leftX, y, h: -Math.PI / 2, v: 0.30, phase: 1 });
+  }
+
+  // Phase 2: Bottom curve (left→right, 180° arc)
+  const angles = 160; // number of points on the arc
+  for (let i = 0; i <= angles; i++) {
+    const a = Math.PI - (i / angles) * Math.PI; // π → 0
+    pts.push({
+      x: ox + CR * Math.cos(a),
+      y: botY + CR * Math.sin(a),
+      h: a - Math.PI / 2,  // heading: tangent to arc
+      v: 0.28,
+      phase: 1
+    });
+  }
+
+  // Phase 3: Right straight going UP
+  for (let y = botY; y <= BRANCH_Y; y += step) {
+    pts.push({ x: rightX, y, h: Math.PI / 2, v: 0.30, phase: 1 });
+  }
+
+  // Phase 4: BRANCH ENTER — 90° right turn in place
+  const turn90Pts = 30;
+  for (let i = 0; i <= turn90Pts; i++) {
+    const t = i / turn90Pts;
+    const h = Math.PI / 2 + t * (-Math.PI / 2); // π/2 → 0 (right turn, heading to +X)
+    pts.push({ x: rightX, y: BRANCH_Y, h, v: 0, phase: 2 });
+  }
+
+  // Phase 5: BRANCH FOLLOW — go straight into branch
+  const branchSteps = Math.floor(BRANCH_DEPTH / step);
+  for (let i = 1; i <= branchSteps; i++) {
+    pts.push({
+      x: rightX + i * step,
+      y: BRANCH_Y,
+      h: 0,  // heading 0 = facing +X (right)
+      v: 0.20,
+      phase: 3
+    });
+  }
+
+  // Phase 6: BRANCH JUDGE — stop at berry zone, wait
+  const stopX = BERRY_X;
+  const stopY = BERRY_Y;
+  // Already at stop position, add stationary points (K210 judging)
+  for (let i = 0; i < 40; i++) {
+    pts.push({ x: stopX, y: stopY, h: 0, v: 0, phase: 4 });
+  }
+
+  // Phase 7: BRANCH REVERSE — turn 180°
+  const turn180Pts = 60;
+  for (let i = 0; i <= turn180Pts; i++) {
+    const t = i / turn180Pts;
+    const h = 0 + t * Math.PI; // 0 → π (facing -X)
+    pts.push({ x: stopX, y: stopY, h, v: 0, phase: 5 });
+  }
+
+  // Phase 8: Reverse back toward main track
+  for (let i = branchSteps; i >= 0; i--) {
+    pts.push({
+      x: rightX + i * step,
+      y: BRANCH_Y,
+      h: Math.PI,  // heading π = facing -X (left)
+      v: -0.22,
+      phase: 5
+    });
+  }
+
+  // Phase 9: Turn left 90° at junction to face UP
+  for (let i = 0; i <= turn90Pts; i++) {
+    const t = i / turn90Pts;
+    const h = Math.PI + t * (-Math.PI / 2); // π → π/2 (left turn to face up)
+    pts.push({ x: rightX, y: BRANCH_Y, h, v: 0, phase: 6 });
+  }
+
+  // Phase 10: Resume LINE_FOLLOW going UP
+  for (let y = BRANCH_Y; y <= startY + 0.5; y += step) {
+    pts.push({ x: rightX, y, h: Math.PI / 2, v: 0.30, phase: 6 });
+  }
+
+  return pts;
+}
+
+// ═══════════════════════════════════════════════
+// RENDERING
+// ═══════════════════════════════════════════════
+const trajectory = generateIdealTrajectory();
+
+function drawFullTrajectory() {
+  resize();
+  ctx.save();
+  drawTrack();
+
+  // Draw trajectory colored by phase
+  for (let i = 1; i < trajectory.length; i++) {
+    const p0 = trajectory[i - 1];
+    const p1 = trajectory[i];
+    const s0 = w2s(p0.x, p0.y);
+    const s1 = w2s(p1.x, p1.y);
+
+    let color;
+    switch (p1.phase) {
+      case 1: color = '#3fb950'; break;  // green: line follow
+      case 2: color = '#58a6ff'; break;  // blue: branch enter
+      case 3: color = '#58a6ff'; break;  // blue: branch follow
+      case 4: color = '#f85149'; break;  // red: judge
+      case 5: color = '#d2991d'; break;  // yellow: reverse
+      case 6: color = '#3fb950'; break;  // green: resume
+    }
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.globalAlpha = p1.phase === 4 ? 0.5 : 0.9;
+    ctx.beginPath();
+    ctx.moveTo(s0.x, s0.y);
+    ctx.lineTo(s1.x, s1.y);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // Draw arrow at end
+  const last = trajectory[trajectory.length - 1];
+  const ls = w2s(last.x, last.y);
+  drawArrow(ls.x, ls.y, last.h, '#3fb950', 14);
+
+  // Draw arrow at start
+  const first = trajectory[0];
+  const fs = w2s(first.x, first.y);
+  drawArrow(fs.x, fs.y, first.h, '#fff', 12);
+
+  // Phase markers
+  const markers = [
+    { idx: 0, label: 'START' },
+    { idx: Math.floor(trajectory.length * 0.18), label: '巡线' },
+    { idx: Math.floor(trajectory.length * 0.48), label: '岔路拐入' },
+    { idx: Math.floor(trajectory.length * 0.54), label: 'K210判定' },
+    { idx: Math.floor(trajectory.length * 0.62), label: '倒车返程' },
+    { idx: trajectory.length - 1, label: '继续巡线' },
+  ];
+
+  for (const m of markers) {
+    const p = trajectory[Math.min(m.idx, trajectory.length - 1)];
+    const s = w2s(p.x, p.y);
+    ctx.fillStyle = '#fff'; ctx.font = '10px monospace'; ctx.textAlign = 'left';
+    ctx.fillText(m.label, s.x + 8, s.y - 8);
+  }
+
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════
+// ANIMATION
+// ═══════════════════════════════════════════════
+let animIdx = 0;
+let animRunning = false;
+let animRAF = null;
+const ANIM_SPEED = 3; // points per frame
+const TRAIL_LENGTH = 200; // trail behind the car
+
+const phaseNames = {
+  1: '🚗 自主巡线行驶',
+  2: '🔀 岔路口拐入',
+  3: '📡 分支线前进',
+  4: '🤖 K210 AI 成熟度判定',
+  5: '↩ 倒车返程',
+  6: '🚗 回归主赛道巡线',
+};
+
+function drawArrow(x, y, heading, color, size) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(-heading + Math.PI / 2);
+
+  // Car body
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(0, -size * 0.8);
+  ctx.lineTo(size * 0.6, size * 0.6);
+  ctx.lineTo(-size * 0.6, size * 0.6);
+  ctx.closePath();
+  ctx.fill();
+
+  // Glow
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 10;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  ctx.restore();
+}
+
+function animateFrame() {
+  if (!animRunning) return;
+
+  resize();
+  ctx.save();
+  drawTrack();
+
+  // Draw trail behind current position
+  const trailStart = Math.max(0, animIdx - TRAIL_LENGTH);
+  for (let i = trailStart + 1; i <= animIdx && i < trajectory.length; i++) {
+    const p0 = trajectory[i - 1];
+    const p1 = trajectory[i];
+    const s0 = w2s(p0.x, p0.y);
+    const s1 = w2s(p1.x, p1.y);
+
+    // Fade trail: brighter near car
+    const fade = (i - trailStart) / (animIdx - trailStart);
+
+    let color;
+    switch (p1.phase) {
+      case 1: color = '#3fb950'; break;
+      case 2: color = '#58a6ff'; break;
+      case 3: color = '#58a6ff'; break;
+      case 4: color = '#f85149'; break;
+      case 5: color = '#d2991d'; break;
+      case 6: color = '#3fb950'; break;
+    }
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.globalAlpha = 0.2 + fade * 0.8;
+    ctx.beginPath();
+    ctx.moveTo(s0.x, s0.y);
+    ctx.lineTo(s1.x, s1.y);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // Also draw the full trajectory ahead faintly
+  for (let i = animIdx + 1; i < trajectory.length - 1; i++) {
+    const p0 = trajectory[i];
+    const p1 = trajectory[i + 1];
+    const s0 = w2s(p0.x, p0.y);
+    const s1 = w2s(p1.x, p1.y);
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(s0.x, s0.y);
+    ctx.lineTo(s1.x, s1.y);
+    ctx.stroke();
+  }
+
+  // Draw car at current position
+  if (animIdx < trajectory.length) {
+    const cp = trajectory[animIdx];
+    const cs = w2s(cp.x, cp.y);
+    drawArrow(cs.x, cs.y, cp.h, '#fff', 16);
+  }
+
+  // Phase label
+  if (animIdx < trajectory.length) {
+    const cp = trajectory[animIdx];
+    const label = document.getElementById('phase-label');
+    if (cp.phase && phaseNames[cp.phase]) {
+      const prev = animIdx > 0 ? trajectory[animIdx - 1] : null;
+      if (!prev || prev.phase !== cp.phase) {
+        label.textContent = phaseNames[cp.phase];
+        label.style.opacity = '1';
+      }
+    }
+  }
+
+  ctx.restore();
+
+  animIdx += ANIM_SPEED;
+  if (animIdx >= trajectory.length) {
+    animIdx = 0;
+    document.getElementById('phase-label').style.opacity = '0';
+  }
+
+  animRAF = requestAnimationFrame(animateFrame);
+}
+
+function startAnimation() {
+  if (animRunning) return;
+  animIdx = 0;
+  animRunning = true;
+  document.getElementById('phase-label').style.opacity = '0';
+  document.getElementById('btn-animate').classList.add('active');
+  document.getElementById('btn-full').classList.remove('active');
+  animateFrame();
+}
+
+function stopAnimation() {
+  animRunning = false;
+  if (animRAF) { cancelAnimationFrame(animRAF); animRAF = null; }
+  document.getElementById('btn-animate').classList.remove('active');
+  document.getElementById('btn-full').classList.add('active');
+  document.getElementById('phase-label').style.opacity = '0';
+}
+
+function showFull() {
+  stopAnimation();
+  resize();
+  ctx.save();
+  drawTrack();
+  drawFullTrajectory();
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════
+document.getElementById('btn-animate').addEventListener('click', startAnimation);
+document.getElementById('btn-full').addEventListener('click', showFull);
+document.getElementById('btn-reset').addEventListener('click', () => {
+  stopAnimation();
+  animIdx = 0;
+  showFull();
+  document.getElementById('btn-full').classList.add('active');
+});
+
+resize();
+startAnimation();
+
+// Handle DPI changes
+window.addEventListener('resize', () => {
+  if (!animRunning) showFull();
+});
+</script>
+</body>
+</html>
