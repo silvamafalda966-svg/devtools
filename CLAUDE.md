@@ -46,6 +46,33 @@ python pid_tuner.py COM5 raw -c "L0.5"     # 发原始串口命令
 
 **注意:** Windows 开串口会触发 DTR，可能复位 STM32。交互模式下保持串口常开，CLI 模式每次开关需处理 STM32 重连时序。
 
+### car-studio
+
+调车综合平台（Web 版），FastAPI + WebSocket + Chart.js + Canvas 轨迹图。
+
+运行:
+```
+cd car-studio
+pip install -r requirements.txt
+python server.py COM5                     # 连串口启动
+python server.py COM5 --track 0.18        # 指定轮距
+python server.py --no-serial              # 离线回放模式
+```
+→ 浏览器打开 `http://localhost:8000`
+
+五大模块:
+1. **仪表盘** — 四轮速度条、传感器读数、里程计轨迹图（缩放/拖拽/悬停）、航向罗盘
+2. **PID 调参** — 滑块即时调 P/I/D/FF/α、阶跃测试、实时波形
+3. **录制回放** — 一键录制全通道数据、回放波形+轨迹动画
+4. **参数方案** — 保存/加载/对比多套 PID 参数组合
+5. **对比分析** — 多轮数据叠图对比、自动指标表格
+
+轨迹图基于四轮编码器里程计（差速模型）实时推算车体位姿 (x, y, θ)。
+与 pid-tuner 共享 JustFloat 协议 + 文本命令协议，固件无需改动。
+
+核心依赖: `fastapi + uvicorn + pyserial`（后端）; Chart.js CDN（前端）
+
 ## 远期方向
 
-网页版 UI（FastAPI + WebSocket + Chart.js），实时波形 + 滑块调参。工具内部逻辑从脚本迁移到后端时保持模块化，前端只做展示和交互。
+- 更多工具：通用串口调试器、数据分析等
+- 网页版 UI 持续完善：赛道地图校准、自动标注弯道/直道、多车对比
